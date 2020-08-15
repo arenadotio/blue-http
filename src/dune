@@ -1,0 +1,19 @@
+(* -*- tuareg -*- *)
+
+let preprocess =
+  match Sys.getenv "BISECT_ENABLE" with
+  | "yes" -> "bisect_ppx"
+  | _ -> ""
+  | exception Not_found -> ""
+
+let () = Jbuild_plugin.V1.send @@ {|
+
+(library
+ (public_name blue_http)
+ (libraries cohttp_async)
+ (inline_tests
+  (flags (-verbose)))
+ (preprocess
+  (pps ppx_jane |} ^ preprocess ^ {|)))
+
+|}

@@ -1,0 +1,39 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: ocaml/opam2:4.08
+        environment:
+          TERM: xterm
+    steps:
+      - run:
+          name: Update opam
+          command: |
+            opam remote remove --all default
+            opam remote add default https://opam.ocaml.org
+      - checkout
+      - run:
+          name: Pin packages
+          command: |
+            opam pin add -y -n blue-http .
+      - run:
+          name: Install system dependencies
+          command: sudo apt-get update && opam depext -y blue-http
+      - run:
+          name: Install OCaml dependencies
+          command: opam install --deps-only -y blue-http
+      - run:
+          # Build before installing test deps so we ensure that we don't depend on them
+          name: Build
+          command: opam config exec -- make
+      - run:
+          # This is a separate step so we don't run tests for all of our deps
+          name: Install OCaml test dependencies
+          command: opam install --deps-only -t -y blue-http
+      - run:
+          name: Test
+          command: opam config exec -- make coverage
+      - run:
+          name: Upload coverage report
+          command: |
+            opam config exec -- bisect-ppx-report send-to Coveralls
