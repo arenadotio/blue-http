@@ -3,8 +3,7 @@ open Async
 
 let bad_tls_domains =
   [ "expired.badssl.com"
-    (* FIXME: Verify host matches certificate
-       ; "wrong.host.badssl.com" *)
+  ; "wrong.host.badssl.com"
   ; "self-signed.badssl.com"
   ; "untrusted-root.badssl.com"
   ]
