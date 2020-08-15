@@ -24,7 +24,6 @@
   async_ssl
   (cohttp-async
    (>= 2.0.0))
-  atdgen
   (bisect_ppx
    (and
     :dev
@@ -34,6 +33,5 @@
   ppx_jane
   (ocaml
    (>= 4.08.0))
-  re2
   sexplib
   uri))

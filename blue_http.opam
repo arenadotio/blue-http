@@ -13,12 +13,10 @@ bug-reports: "https://github.com/brendanlong/blue-http/issues"
 depends: [
   "async_ssl"
   "cohttp-async" {>= "2.0.0"}
-  "atdgen"
   "bisect_ppx" {dev & >= "2.0.0"}
   "dune" {>= "2.0.0"}
   "ppx_jane"
   "ocaml" {>= "4.08.0"}
-  "re2"
   "sexplib"
   "uri"
 ]
