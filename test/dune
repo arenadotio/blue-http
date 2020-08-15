@@ -1,0 +1,4 @@
+(tests
+ (names test_ssl)
+ (package blue_http)
+ (libraries alcotest-async blue_http))
