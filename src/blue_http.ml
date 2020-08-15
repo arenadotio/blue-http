@@ -34,9 +34,16 @@ let default_ssl_config ?hostname () =
 (* The HTTP 1.0 standard recommends 5 as the maximum number of redirects in a chain
    See section 10.3 of https://www.ietf.org/rfc/rfc2616.txt
    Chrome's max is 20 and curl's max is 50 *)
-let default_max_redirects = 20
+let default_max_redirects = ref 20
 
-let with_redirects ?(max_redirects = default_max_redirects) uri f =
+let set_default_max_redirects n =
+  assert (n >= 0);
+  default_max_redirects := n
+;;
+
+let with_redirects ?max_redirects uri f =
+  let max_redirects = Option.value max_redirects ~default:!default_max_redirects in
+  assert (max_redirects >= 0);
   let seen_uris = Hash_set.create (module String) in
   let rec loop ~max_redirects uri =
     Hash_set.add seen_uris (Uri.to_string uri);
