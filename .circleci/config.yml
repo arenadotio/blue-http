@@ -15,13 +15,13 @@ jobs:
       - run:
           name: Pin packages
           command: |
-            opam pin add -y -n blue-http .
+            opam pin add -y -n blue_http .
       - run:
           name: Install system dependencies
-          command: sudo apt-get update && opam depext -y blue-http
+          command: sudo apt-get update && opam depext -y blue_http
       - run:
           name: Install OCaml dependencies
-          command: opam install --deps-only -y blue-http
+          command: opam install --deps-only -y blue_http
       - run:
           # Build before installing test deps so we ensure that we don't depend on them
           name: Build
@@ -29,7 +29,7 @@ jobs:
       - run:
           # This is a separate step so we don't run tests for all of our deps
           name: Install OCaml test dependencies
-          command: opam install --deps-only -t -y blue-http
+          command: opam install --deps-only -t -y blue_http
       - run:
           name: Test
           command: opam config exec -- make coverage
