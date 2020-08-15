@@ -4,7 +4,7 @@ let () =
   let command =
     let open Command.Let_syntax in
     Command.async
-      ~summary:"a more complicated example"
+      ~summary:"A CLI to make requests with Blue_http"
       [%map_open
         let meth =
           flag
