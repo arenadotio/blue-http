@@ -20,7 +20,7 @@ let () =
           let open Deferred.Let_syntax in
           if verbose then Log.Global.set_level `Debug;
           Log.Global.info "%s %s" (Cohttp.Code.string_of_method meth) (Uri.to_string uri);
-          let%bind response, body = Blue_http.request meth uri in
+          let%bind response, body = Blue_http.request_stream meth uri in
           Log.Global.info !"%{sexp:Cohttp.Response.t}" response;
           let%map body = Cohttp_async.Body.to_string body in
           Log.Global.info "%s" body]

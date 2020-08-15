@@ -81,7 +81,7 @@ let with_redirects ?(max_redirects = default_max_redirects) uri f =
   loop ~max_redirects uri
 ;;
 
-let request ?max_redirects ?interrupt ?headers ?chunked ?body meth uri =
+let request_stream ?max_redirects ?interrupt ?headers ?chunked ?body meth uri =
   with_redirects ?max_redirects uri
   @@ fun uri ->
   let%bind ssl_config =
@@ -89,4 +89,18 @@ let request ?max_redirects ?interrupt ?headers ?chunked ?body meth uri =
     default_ssl_config ?hostname ()
   in
   Cohttp_async.Client.call ?interrupt ?headers ?chunked ?body ~ssl_config meth uri
+;;
+
+let request ?max_redirects ?interrupt ?headers ?chunked ?body meth uri =
+  let%bind res, body =
+    request_stream ?max_redirects ?interrupt ?headers ?chunked ?body meth uri
+  in
+  Cohttp_async.Body.to_string body >>| fun body -> res, body
+;;
+
+let request_ignore_body ?max_redirects ?interrupt ?headers ?chunked ?body meth uri =
+  let%bind res, body =
+    request_stream ?max_redirects ?interrupt ?headers ?chunked ?body meth uri
+  in
+  Cohttp_async.Body.drain body >>| fun () -> res
 ;;
