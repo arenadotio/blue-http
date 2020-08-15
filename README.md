@@ -16,7 +16,7 @@ without additional configuration.
   - Connection pooling
   - Redirect following
 
-## Missing features:
+## Missing features
 
   - Only supports Async (pull requests to factor out Lwt/Unix are welcome!)
 

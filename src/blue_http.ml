@@ -40,37 +40,49 @@ let default_ssl_config ?ca_file ?hostname () =
    Chrome's max is 20 and curl's max is 50 *)
 let default_max_redirects = 20
 
-let rec with_redirects ?(max_redirects = default_max_redirects) uri f =
-  let%bind ((response, response_body) as res) = f uri in
-  let status_code = Cohttp.(Response.status response |> Code.code_of_status) in
-  if Cohttp.Code.is_redirection status_code
-  then (
-    match Cohttp.(Response.headers response |> Header.get_location) with
-    | Some new_uri ->
-      if max_redirects > 0
-      then (
+let with_redirects ?(max_redirects = default_max_redirects) uri f =
+  let seen_uris = Hash_set.create (module String) in
+  let rec loop ~max_redirects uri =
+    Hash_set.add seen_uris (Uri.to_string uri);
+    let%bind ((response, response_body) as res) = f uri in
+    let status_code = Cohttp.(Response.status response |> Code.code_of_status) in
+    if Cohttp.Code.is_redirection status_code
+    then (
+      match Cohttp.(Response.headers response |> Header.get_location) with
+      | Some new_uri when Uri.to_string new_uri |> Hash_set.mem seen_uris ->
         Log.Global.debug
-          "Following %d redirect from %s to %s"
+          "Ignoring %d redirect from %s to %s due to redirect loop detected"
           status_code
           (Uri.to_string uri)
           (Uri.to_string new_uri);
-        (* Cohttp leaks connections if we don't drain the response body *)
-        Cohttp_async.Body.drain response_body
-        >>= fun () -> with_redirects ~max_redirects:(max_redirects - 1) new_uri f)
-      else (
+        return res
+      | Some new_uri ->
+        if max_redirects > 0
+        then (
+          Log.Global.debug
+            "Following %d redirect from %s to %s"
+            status_code
+            (Uri.to_string uri)
+            (Uri.to_string new_uri);
+          (* Cohttp leaks connections if we don't drain the response body *)
+          Cohttp_async.Body.drain response_body
+          >>= fun () -> loop ~max_redirects:(max_redirects - 1) new_uri)
+        else (
+          Log.Global.debug
+            "Ignoring %d redirect from %s to %s because we hit our redirect limit"
+            status_code
+            (Uri.to_string uri)
+            (Uri.to_string new_uri);
+          return res)
+      | None ->
         Log.Global.debug
-          "Ignoring %d redirect from %s to %s because we hit our redirect limit"
+          "Ignoring %d redirect from %s because there is no Location header"
           status_code
-          (Uri.to_string uri)
-          (Uri.to_string new_uri);
+          (Uri.to_string uri);
         return res)
-    | None ->
-      Log.Global.debug
-        "Ignoring %d redirect from %s because there is no Location header"
-        status_code
-        (Uri.to_string uri);
-      return res)
-  else return res
+    else return res
+  in
+  loop ~max_redirects uri
 ;;
 
 let request ?max_redirects ?interrupt ?headers ?chunked ?body meth uri =
