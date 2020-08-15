@@ -22,6 +22,7 @@ let () =
           let new_uri = Uri.with_query' uri [ "n", n - 1 |> Int.to_string ] in
           Cohttp_async.Server.respond_with_redirect new_uri
         | 0 -> Cohttp_async.Server.respond_string ~status:`OK "Not redirecting"
+        | -1 -> Cohttp_async.Server.respond_with_redirect uri
         | _ -> assert false)
   in
   let base_uri =
@@ -64,6 +65,14 @@ let () =
                      `GET
                      (Uri.with_query' base_uri [ "n", Int.to_string redirects ])
                    >>| [%test_pred: Cohttp.Response.t] response_is_redirect)) )
+    ; ( "redirects loop"
+      , [ test_case "infinite loop" `Quick (fun () ->
+              Blue_http.request_ignore_body
+                ~max_redirects:Int.max_value
+                `GET
+                (Uri.with_query' base_uri [ "n", "-1" ])
+              >>| [%test_pred: Cohttp.Response.t] response_is_redirect)
+        ] )
     ]
   |> Alcotest_async.run "test_redirect"
 ;;
