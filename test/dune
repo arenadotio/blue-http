@@ -1,4 +1,6 @@
 (tests
- (names test_ssl)
+ (names test_tls)
  (package blue_http)
- (libraries alcotest-async blue_http))
+ (libraries alcotest-async blue_http)
+ (preprocess
+  (pps ppx_jane)))
