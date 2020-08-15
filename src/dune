@@ -10,7 +10,7 @@ let () = Jbuild_plugin.V1.send @@ {|
 
 (library
  (public_name blue_http)
- (libraries cohttp_async)
+ (libraries cohttp-async)
  (inline_tests
   (flags (-verbose)))
  (preprocess
