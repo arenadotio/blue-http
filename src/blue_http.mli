@@ -1,4 +1,5 @@
 open Async_kernel
+module Client = Client
 
 (** [set_default_max_redirects n] sets the maximum number of redirects we will do before giving up.
     [n] of 0 means redirects will not be followed.
@@ -12,6 +13,7 @@ val request_stream
   -> ?headers:Cohttp.Header.t
   -> ?chunked:bool
   -> ?body:Cohttp_async.Body.t
+  -> ?client:Client.t
   -> Cohttp.Code.meth
   -> Uri.t
   -> (Cohttp.Response.t * Cohttp_async.Body.t) Deferred.t
@@ -22,6 +24,7 @@ val request
   -> ?headers:Cohttp.Header.t
   -> ?chunked:bool
   -> ?body:Cohttp_async.Body.t
+  -> ?client:Client.t
   -> Cohttp.Code.meth
   -> Uri.t
   -> (Cohttp.Response.t * string) Deferred.t
@@ -32,6 +35,7 @@ val request_ignore_body
   -> ?headers:Cohttp.Header.t
   -> ?chunked:bool
   -> ?body:Cohttp_async.Body.t
+  -> ?client:Client.t
   -> Cohttp.Code.meth
   -> Uri.t
   -> Cohttp.Response.t Deferred.t
