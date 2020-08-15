@@ -26,6 +26,11 @@ let () =
               Blue_http.request_ignore_body `GET (Uri.of_string "https://www.example.com")
               |> Deferred.ignore_m)
         ] )
+    ; ( "not https"
+      , [ test_case "example.com" `Quick (fun () ->
+              Blue_http.request_ignore_body `GET (Uri.of_string "http://www.example.com")
+              |> Deferred.ignore_m)
+        ] )
     ]
   |> Alcotest_async.run "test_tls"
 ;;
