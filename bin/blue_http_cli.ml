@@ -12,9 +12,13 @@ let () =
             "--method"
             ~aliases:[ "-m" ]
             (optional_with_default `GET (Arg_type.create Cohttp.Code.method_of_string))
-        and uri = anon ("uri" %: Arg_type.create Uri.of_string) in
+        and uri = anon ("uri" %: Arg_type.create Uri.of_string)
+        and verbose =
+          flag ~doc:"pass to enable debug logs" "--verbose" ~aliases:[ "-v" ] no_arg
+        in
         fun () ->
           let open Deferred.Let_syntax in
+          if verbose then Log.Global.set_level `Debug;
           Log.Global.info "%s %s" (Cohttp.Code.string_of_method meth) (Uri.to_string uri);
           let%bind response, body = Blue_http.request meth uri in
           Log.Global.info !"%{sexp:Cohttp.Response.t}" response;
