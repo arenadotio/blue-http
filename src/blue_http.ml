@@ -21,12 +21,8 @@ let default_ca_file =
       | _ -> false)
 ;;
 
-let default_ssl_config ?ca_file ?hostname () =
-  let%map ca_file =
-    match ca_file with
-    | Some ca_file -> return (Some ca_file)
-    | None -> Lazy_deferred.force_exn default_ca_file
-  in
+let default_ssl_config ?hostname () =
+  let%map ca_file = Lazy_deferred.force_exn default_ca_file in
   let verify =
     match ca_file with
     | Some _ -> Some Conduit_async.Ssl.verify_certificate
