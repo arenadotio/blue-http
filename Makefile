@@ -1,7 +1,7 @@
 all: build
 
 build:
-	@dune build @install
+	@dune build @install @examples
 
 clean:
 	@rm -rf `find . -name 'bisect*.out'` _coverage

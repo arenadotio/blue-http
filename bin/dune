@@ -1,0 +1,9 @@
+(executables
+ (names blue_http_cli)
+ (libraries blue_http)
+ (preprocess
+  (pps ppx_jane)))
+
+(alias
+ (name examples)
+ (deps blue_http_cli.exe))
