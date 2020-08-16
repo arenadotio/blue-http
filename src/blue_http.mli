@@ -1,6 +1,10 @@
 open Async_kernel
 module Client = Client
 
+module For_testing : sig
+  module Pool = Pool
+end
+
 (** [set_default_max_redirects n] sets the maximum number of redirects we will do before giving up.
     [n] of 0 means redirects will not be followed.
     An exception will be thrown if [n] < 0.

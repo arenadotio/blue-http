@@ -2,6 +2,10 @@ open Core
 open Async
 module Client = Client
 
+module For_testing = struct
+  module Pool = Pool
+end
+
 let set_default_max_redirects = Redirect.set_default_max_redirects
 
 let request_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =

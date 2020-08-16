@@ -114,8 +114,7 @@ let rec enqueue
       upon (at expires) (fun () ->
           (* If the uuid doesn't match then some other process has used this item since the expiration process started *)
           if Uuid.(item.last_used_uuid = uuid)
-          then ()
-          else (
+          then (
             (* UUID matches so nothing else has used this item; time to delete it *)
             Log.Global.debug "Pool item expired";
             Throttle.kill item.value));
