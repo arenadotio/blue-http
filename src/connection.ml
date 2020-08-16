@@ -52,12 +52,15 @@ type t' =
 (* we can't send concurrent requests over HTTP/1 *)
 type t = t' Sequencer.t
 
+let at_kill { ic; oc } =
+  Deferred.both (Writer.close oc) (Reader.close ic) >>| fun ((), ()) -> ()
+;;
+
 let connect ?interrupt scheme_host_port =
   Net.connect_uri ?interrupt scheme_host_port
   >>| fun (ic, oc) ->
   let t = { ic; oc } |> Sequencer.create ~continue_on_error:false in
-  Throttle.at_kill t (fun { ic; oc } ->
-      Deferred.both (Writer.close oc) (Reader.close ic) >>| fun ((), ()) -> ());
+  Throttle.at_kill t at_kill;
   Deferred.any [ Writer.consumer_left oc; Reader.close_finished ic ]
   >>| (fun () -> Throttle.kill t)
   |> don't_wait_for;
