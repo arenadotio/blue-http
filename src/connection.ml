@@ -42,60 +42,49 @@ module Net = struct
   ;;
 end
 
-type t' =
+type t =
   { ic : Reader.t
   ; oc : Writer.t
   }
 
-(* we can't send concurrent requests over HTTP/1 *)
-type t = t' Sequencer.t
-
-let at_kill { ic; oc } =
+let close { ic; oc } =
   Deferred.both (Writer.close oc) (Reader.close ic) >>| fun ((), ()) -> ()
 ;;
 
 let connect ?interrupt scheme_host_port =
   Net.connect_uri ?interrupt scheme_host_port
   >>| fun (ic, oc) ->
-  let t = { ic; oc } |> Sequencer.create ~continue_on_error:false in
-  Throttle.at_kill t at_kill;
+  Log.Global.info "Connected to %s" (Scheme_host_port.to_string scheme_host_port);
+  let t = { ic; oc } in
   Deferred.any [ Writer.consumer_left oc; Reader.close_finished ic ]
-  >>| (fun () -> Throttle.kill t)
+  >>= (fun () -> close t)
   |> don't_wait_for;
   t
 ;;
 
-let close t =
-  Throttle.kill t;
-  Throttle.cleaned t
-;;
-
-let is_closed t = Throttle.is_dead t
+let is_closed { ic; oc } = Reader.is_closed ic && Writer.is_closed oc
 
 exception Connection_closed_by_remote_host [@@deriving sexp_of]
 
-let request ~body t req =
-  let res = Ivar.create () in
-  Throttle.enqueue t (fun { ic; oc } ->
-      Request.write (Cohttp_async.Body_raw.write_body Request.write_body body) req oc
-      >>= fun () ->
-      Response.read ic
-      >>= function
-      | `Eof -> raise Connection_closed_by_remote_host
-      | `Invalid reason -> failwith reason
-      | `Ok resp ->
-        let body =
-          match Response.has_body resp with
-          | `Yes | `Unknown ->
-            Response.make_body_reader resp ic
-            |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk
-          | `No -> Pipe.empty ()
-        in
-        Ivar.fill res (resp, `Pipe body);
-        (* block starting any more requests until the consumer has finished reading this request *)
-        Pipe.closed body)
-  |> don't_wait_for;
-  Ivar.read res
+let request ~body { ic; oc } req =
+  Log.Global.info !"Requesting %{sexp:Cohttp.Request.t}" req;
+  Request.write (Cohttp_async.Body_raw.write_body Request.write_body body) req oc
+  >>= fun () ->
+  Response.read ic
+  >>| function
+  | `Eof -> raise Connection_closed_by_remote_host
+  | `Invalid reason -> failwith reason
+  | `Ok resp ->
+    Log.Global.info !"Got response: %{sexp:Cohttp.Response.t}" resp;
+    let body =
+      match Response.has_body resp with
+      | `Yes | `Unknown ->
+        Response.make_body_reader resp ic
+        |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk
+      | `No -> Pipe.empty ()
+    in
+    Log.Global.info "Finished setting up body";
+    resp, `Pipe body
 ;;
 
 let call ?headers ?(chunked = false) ?(body = `Empty) t meth uri =

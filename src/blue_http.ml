@@ -10,7 +10,12 @@ let request_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client met
     | Some client -> f client
     | None ->
       let client = Client.create () in
-      Monitor.protect (fun () -> f client) ~finally:(fun () -> Client.close client)
+      Monitor.protect
+        (fun () -> f client)
+        ~finally:(fun () ->
+          (* We can't wait for the client to close because it doesn't finish until the body is fully read *)
+          Client.close client |> don't_wait_for;
+          Deferred.unit)
   in
   with_client
   @@ fun client ->

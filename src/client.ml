@@ -45,6 +45,7 @@ let make_pool
         "Closing connection to %s"
         (Scheme_host_port.to_string scheme_host_port);
       Connection.close t)
+    ~check_item:(fun t -> Deferred.return @@ not @@ Connection.is_closed t)
     ~on_empty:(fun () ->
       if Hashtbl.mem connections scheme_host_port
       then (
@@ -69,10 +70,29 @@ let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
   let rec loop ~is_first_request =
     Monitor.try_with (fun () ->
         let pool = find_or_make_pool ?interrupt t uri in
+        let ivar_res = Ivar.create () in
         Pool.enqueue pool (fun connection ->
-            Connection.call ?headers ?chunked ?body connection meth uri))
+            let%bind res =
+              Monitor.try_with ~extract_exn:true (fun () ->
+                  Connection.call ?headers ?chunked ?body connection meth uri)
+            in
+            Ivar.fill ivar_res res;
+            match res with
+            | Ok (_, `Pipe body) ->
+              Log.Global.info
+                "Waiting for body to finish reading for %s"
+                (Uri.to_string uri);
+              (* We need to wait for the body to finish being read before we can re-use this connection *)
+              Pipe.closed body
+              >>| fun () ->
+              Log.Global.info "Finished reading body for %s" (Uri.to_string uri)
+            | _ -> Deferred.unit)
+        |> don't_wait_for;
+        Ivar.read ivar_res >>| Result.ok_exn)
     >>= function
-    | Ok response -> return response
+    | Ok response ->
+      Log.Global.info "Finished request to %s" (Uri.to_string uri);
+      return response
     | Error e ->
       (* We have no way of detecting if the remote side closed a connection before we were able to make a request,
          so always make a request and retry once if the connection was closed *)
