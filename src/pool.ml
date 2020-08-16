@@ -73,10 +73,12 @@ let rec enqueue
         (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
          cleanup function *)
         Throttle.at_kill value (fun item ->
-            kill_item_f item
-            >>| fun () ->
             Hashtbl.remove items key;
-            if Hashtbl.is_empty items then on_empty ());
+            Monitor.protect
+              (fun () -> kill_item_f item)
+              ~finally:(fun () ->
+                if Hashtbl.is_empty items then on_empty ();
+                Deferred.unit));
         Hashtbl.add_exn items ~key ~data:item;
         item)
       else (
@@ -89,7 +91,9 @@ let rec enqueue
         in
         item)
   in
-  if Throttle.is_dead item.value || Throttle.num_jobs_running item.value > 0
+  if Throttle.is_dead item.value
+  then Throttle.cleaned item.value >>= fun () -> enqueue t f
+  else if Throttle.num_jobs_running item.value > 0
   then enqueue t f
   else (
     (* Update expiration UUID so other expiration processes don't delete this connection
@@ -107,7 +111,7 @@ let rec enqueue
     match res with
     | `Check_failed ->
       Throttle.kill item.value;
-      enqueue t f
+      Throttle.cleaned item.value >>= fun () -> enqueue t f
     | `Ok res ->
       (* Check expiration once the timeout finishes *)
       let expires = Time.(add (now ()) expire_timeout) in

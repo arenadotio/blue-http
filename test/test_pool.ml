@@ -2,6 +2,20 @@ open Core
 open Async
 module Pool = Blue_http.For_testing.Pool
 
+module T = struct
+  type t =
+    { uuid : Uuid.t
+    ; mutable killed : bool
+    }
+  [@@deriving compare, equal, sexp_of]
+
+  let ( = ) = equal
+  let ( <> ) a b = not (a = b)
+  let new_item () = Deferred.return { uuid = Uuid_unix.create (); killed = false }
+  let kill_item t = Deferred.return @@ (t.killed <- true)
+  let check_item { killed; _ } = Deferred.return @@ not killed
+end
+
 let () =
   Thread_safe.block_on_async_exn
   @@ fun () ->
@@ -19,23 +33,25 @@ let () =
                  `Quick
                  (fun () ->
                    let pool =
+                     let open T in
                      Pool.create
                        ~max_elements:1
                        ~expire_timeout
-                       ~new_item:(fun () -> return @@ Uuid_unix.create ())
-                       ~kill_item:(fun _ -> Deferred.unit)
-                       ~check_item:(fun _ -> return true)
+                       ~new_item
+                       ~kill_item
+                       ~check_item
                        ()
                    in
-                   let%bind uuid = Pool.enqueue pool (fun t -> return t) in
+                   let%bind t = Pool.enqueue pool Deferred.return in
                    after wait
                    >>= fun () ->
                    Pool.enqueue pool (fun t -> return t)
-                   >>| [%test_result: Uuid.t] ~expect:uuid)) )
+                   >>| [%test_result: T.t] ~expect:t
+                   >>| fun () -> [%test_result: bool] t.killed ~expect:false)) )
     ; ( "wait > expire_timeout"
       , [ Time.Span.of_ms 10. ]
         |> List.map ~f:(fun expire_timeout ->
-               let wait = Time.Span.(expire_timeout + of_ms 1000.) in
+               let wait = Time.Span.(expire_timeout + of_ms 10.) in
                test_case
                  Time.Span.(
                    sprintf
@@ -45,21 +61,72 @@ let () =
                  `Quick
                  (fun () ->
                    let pool =
+                     let open T in
                      Pool.create
                        ~max_elements:1
                        ~expire_timeout
-                       ~new_item:(fun () -> return @@ Uuid_unix.create ())
-                       ~kill_item:(fun _ -> Deferred.unit)
-                       ~check_item:(fun _ -> return true)
+                       ~new_item
+                       ~kill_item
+                       ~check_item
                        ()
                    in
-                   let%bind uuid = Pool.enqueue pool (fun t -> return t) in
+                   let%bind t = Pool.enqueue pool Deferred.return in
                    after wait
                    >>= fun () ->
-                   Pool.enqueue pool (fun t -> return t)
-                   >>| [%test_result: Uuid.t]
-                         ~equal:(fun a b -> Uuid.(a <> b))
-                         ~expect:uuid)) )
+                   Pool.enqueue pool Deferred.return
+                   >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t
+                   >>| fun () -> [%test_result: bool] t.killed ~expect:true)) )
+    ; ( "killed"
+      , [ test_case "killed" `Quick (fun () ->
+              let pool =
+                let open T in
+                Pool.create
+                  ~max_elements:1
+                  ~expire_timeout:(Time.Span.of_day 100.)
+                  ~new_item
+                  ~kill_item
+                  ~check_item
+                  ()
+              in
+              let%bind t = Pool.enqueue pool Deferred.return in
+              t.killed <- true;
+              (* FIXME: Why do we need this? *)
+              Deferred.unit
+              >>= fun () ->
+              Pool.enqueue pool Deferred.return
+              >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t)
+        ] )
+    ; ( "wait > expire_timeout with re-use"
+      , [ (let expire_timeout = Time.Span.of_ms 10.
+           and wait = Time.Span.of_ms 5.
+           and num_waits = 3 in
+           test_case
+             Time.Span.(
+               sprintf
+                 "wait=%s, expire_timeout=%s, num_waits=%d"
+                 (to_string_hum wait)
+                 (to_string_hum expire_timeout)
+                 num_waits)
+             `Quick
+             (fun () ->
+               let pool =
+                 let open T in
+                 Pool.create
+                   ~max_elements:1
+                   ~expire_timeout
+                   ~new_item
+                   ~kill_item
+                   ~check_item
+                   ()
+               in
+               let%bind t = Pool.enqueue pool Deferred.return in
+               List.init num_waits ~f:(Fn.const ())
+               |> Deferred.List.iter ~how:`Sequential ~f:(fun () ->
+                      after wait
+                      >>= fun () -> Pool.enqueue pool Deferred.return |> Deferred.ignore_m)
+               >>= fun () ->
+               Pool.enqueue pool Deferred.return >>| [%test_result: T.t] ~expect:t))
+        ] )
     ]
   |> Alcotest_async.run "test_tls"
 ;;
