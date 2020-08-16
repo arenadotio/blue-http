@@ -21,6 +21,11 @@ let create
   }
 ;;
 
+let close { connections; _ } =
+  (* Pool.close deletes from connections from we need to iterate over a copy to avoid mutation during iteration *)
+  Hashtbl.data connections |> List.iter ~f:(fun pool -> Pool.close pool)
+;;
+
 let make_pool
     ?interrupt
     { max_connections_per_host; connection_expire_timeout; connections; _ }

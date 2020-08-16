@@ -26,6 +26,11 @@ let create ~max_elements ~expire_timeout ~new_item ~kill_item ?(on_empty = Fn.id
   }
 ;;
 
+let close { items; on_empty; _ } =
+  Hashtbl.iter items ~f:(fun { value; _ } -> Throttle.kill value);
+  on_empty ()
+;;
+
 let enqueue
     { items; max_elements; expire_timeout; new_item_f; kill_item_f; on_empty; _ }
     f

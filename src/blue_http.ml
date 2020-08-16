@@ -3,14 +3,19 @@ open Async
 module Client = Client
 
 let set_default_max_redirects = Redirect.set_default_max_redirects
-let default_client = lazy (Client.create ())
 
 let request_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =
-  let client =
+  let with_client f =
     match client with
-    | Some client -> client
-    | None -> Lazy.force default_client
+    | Some client -> f client
+    | None ->
+      let client = Client.create () in
+      Monitor.protect
+        (fun () -> f client)
+        ~finally:(fun () -> Client.close client |> Deferred.return)
   in
+  with_client
+  @@ fun client ->
   Redirect.with_redirects ?max_redirects uri
   @@ fun uri -> Client.call ?interrupt ?headers ?chunked ?body client meth uri
 ;;
