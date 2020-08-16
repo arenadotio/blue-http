@@ -23,24 +23,47 @@ module Scheme_host_port = struct
   ;;
 end
 
-type t = Connection.t Scheme_host_port.Table.t
+type t =
+  { connections : Connection.t Pool.t Scheme_host_port.Table.t
+  ; max_connections_per_host : int
+  ; connection_expire_timeout : Time.Span.t
+  }
 
-let create () = Scheme_host_port.Table.create ()
+(* Most browsers seem to support 6 concurrent connections
+   https://stackoverflow.com/a/985704/212555 *)
+let create
+    ?(max_connections_per_host = 6)
+    ?(connection_expire_timeout = Time.Span.of_int_sec 30)
+    ()
+  =
+  { connections = Scheme_host_port.Table.create ()
+  ; max_connections_per_host
+  ; connection_expire_timeout
+  }
+;;
 
-let call ?interrupt ?headers ?chunked ?body t meth uri =
+let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
   let rec loop ~is_first_request =
     Monitor.try_with (fun () ->
-        let%bind connection =
+        let pool =
           let key = Scheme_host_port.of_uri uri in
-          match Hashtbl.find t key with
-          | Some connection when not (Connection.is_closed connection) ->
-            return connection
-          | _ ->
-            let%map connection = Connection.connect ?interrupt uri in
-            Hashtbl.set t ~key ~data:connection;
-            connection
+          match Hashtbl.find t.connections key with
+          | Some pool -> pool
+          | None ->
+            let pool =
+              Pool.create
+                ~max_elements:t.max_connections_per_host
+                ~expire_timeout:t.connection_expire_timeout
+                ~new_item:(fun () -> Connection.connect ?interrupt uri)
+                ~kill_item:Connection.close
+                ~on_empty:(fun () -> Hashtbl.remove t.connections key)
+                ()
+            in
+            Hashtbl.set t.connections ~key ~data:pool;
+            pool
         in
-        Connection.call ?headers ?chunked ?body connection meth uri)
+        Pool.enqueue pool (fun connection ->
+            Connection.call ?headers ?chunked ?body connection meth uri))
     >>= function
     | Ok response -> return response
     | Error e ->
