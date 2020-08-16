@@ -36,12 +36,12 @@ let make_pool
     ~max_elements:max_connections_per_host
     ~expire_timeout:connection_expire_timeout
     ~new_item:(fun () ->
-      Log.Global.info
+      Log.Global.debug
         "Making new connection to %s"
         (Scheme_host_port.to_string scheme_host_port);
       Connection.connect ?interrupt scheme_host_port)
     ~kill_item:(fun t ->
-      Log.Global.info
+      Log.Global.debug
         "Closing connection to %s"
         (Scheme_host_port.to_string scheme_host_port);
       Connection.close t)
@@ -49,7 +49,7 @@ let make_pool
     ~on_empty:(fun () ->
       if Hashtbl.mem connections scheme_host_port
       then (
-        Log.Global.info
+        Log.Global.debug
           "Last connection to %s closed"
           (Scheme_host_port.to_string scheme_host_port);
         Hashtbl.remove connections scheme_host_port))
@@ -79,20 +79,13 @@ let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
             Ivar.fill ivar_res res;
             match res with
             | Ok (_, `Pipe body) ->
-              Log.Global.info
-                "Waiting for body to finish reading for %s"
-                (Uri.to_string uri);
               (* We need to wait for the body to finish being read before we can re-use this connection *)
               Pipe.closed body
-              >>| fun () ->
-              Log.Global.info "Finished reading body for %s" (Uri.to_string uri)
             | _ -> Deferred.unit)
         |> don't_wait_for;
         Ivar.read ivar_res >>| Result.ok_exn)
     >>= function
-    | Ok response ->
-      Log.Global.info "Finished request to %s" (Uri.to_string uri);
-      return response
+    | Ok response -> return response
     | Error e ->
       (* We have no way of detecting if the remote side closed a connection before we were able to make a request,
          so always make a request and retry once if the connection was closed *)

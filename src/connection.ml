@@ -54,7 +54,6 @@ let close { ic; oc } =
 let connect ?interrupt scheme_host_port =
   Net.connect_uri ?interrupt scheme_host_port
   >>| fun (ic, oc) ->
-  Log.Global.info "Connected to %s" (Scheme_host_port.to_string scheme_host_port);
   let t = { ic; oc } in
   Deferred.any [ Writer.consumer_left oc; Reader.close_finished ic ]
   >>= (fun () -> close t)
@@ -67,7 +66,6 @@ let is_closed { ic; oc } = Reader.is_closed ic && Writer.is_closed oc
 exception Connection_closed_by_remote_host [@@deriving sexp_of]
 
 let request ~body { ic; oc } req =
-  Log.Global.info !"Requesting %{sexp:Cohttp.Request.t}" req;
   Request.write (Cohttp_async.Body_raw.write_body Request.write_body body) req oc
   >>= fun () ->
   Response.read ic
@@ -75,7 +73,6 @@ let request ~body { ic; oc } req =
   | `Eof -> raise Connection_closed_by_remote_host
   | `Invalid reason -> failwith reason
   | `Ok resp ->
-    Log.Global.info !"Got response: %{sexp:Cohttp.Response.t}" resp;
     let body =
       match Response.has_body resp with
       | `Yes | `Unknown ->
@@ -83,7 +80,6 @@ let request ~body { ic; oc } req =
         |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk
       | `No -> Pipe.empty ()
     in
-    Log.Global.info "Finished setting up body";
     resp, `Pipe body
 ;;
 

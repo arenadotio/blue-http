@@ -117,7 +117,7 @@ let rec enqueue
           then ()
           else (
             (* UUID matches so nothing else has used this item; time to delete it *)
-            Log.Global.info "Pool item expired";
+            Log.Global.debug "Pool item expired";
             Throttle.kill item.value));
       return res)
 ;;
