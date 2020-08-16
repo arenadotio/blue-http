@@ -23,7 +23,9 @@ let create
 
 let close { connections; _ } =
   (* Pool.close deletes from connections from we need to iterate over a copy to avoid mutation during iteration *)
-  Hashtbl.data connections |> List.iter ~f:(fun pool -> Pool.close pool)
+  Hashtbl.data connections
+  |> List.map ~f:(fun pool -> Pool.close pool)
+  |> Deferred.all_unit
 ;;
 
 let make_pool
@@ -45,10 +47,12 @@ let make_pool
         (Scheme_host_port.to_string scheme_host_port);
       Connection.close t)
     ~on_empty:(fun () ->
-      Log.Global.info
-        "Last connection to %s closed"
-        (Scheme_host_port.to_string scheme_host_port);
-      Hashtbl.remove connections scheme_host_port)
+      if Hashtbl.mem connections scheme_host_port
+      then (
+        Log.Global.info
+          "Last connection to %s closed"
+          (Scheme_host_port.to_string scheme_host_port);
+        Hashtbl.remove connections scheme_host_port))
     ()
 ;;
 

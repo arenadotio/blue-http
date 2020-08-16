@@ -10,9 +10,7 @@ let request_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client met
     | Some client -> f client
     | None ->
       let client = Client.create () in
-      Monitor.protect
-        (fun () -> f client)
-        ~finally:(fun () -> Client.close client |> Deferred.return)
+      Monitor.protect (fun () -> f client) ~finally:(fun () -> Client.close client)
   in
   with_client
   @@ fun client ->

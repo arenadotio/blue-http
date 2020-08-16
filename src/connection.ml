@@ -18,7 +18,6 @@ module Response = struct
 
 module Net = struct
   exception Failed_to_resolve_host of string [@@deriving sexp_of]
-  exception Unknown_uri_scheme of string [@@deriving sexp_of]
 
   let connect_uri ?interrupt { Scheme_host_port.scheme; host; port } =
     let open Async_unix.Unix in
@@ -34,11 +33,10 @@ module Net = struct
     in
     let%bind mode =
       match scheme with
-      | "https" ->
+      | `Https ->
         let%map config = Ssl.default_ssl_config ~hostname:host () in
         `OpenSSL (addr, port, config)
-      | "http" -> Deferred.return @@ `TCP (addr, port)
-      | scheme -> raise (Unknown_uri_scheme scheme)
+      | `Http -> Deferred.return @@ `TCP (addr, port)
     in
     Conduit_async.V2.connect ?interrupt mode
   ;;
