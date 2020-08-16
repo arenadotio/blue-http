@@ -20,8 +20,7 @@ module Net = struct
   exception Failed_to_resolve_host of string [@@deriving sexp_of]
   exception Unknown_uri_scheme of string [@@deriving sexp_of]
 
-  let connect_uri ?interrupt uri =
-    let host = Uri.host_with_default ~default:"localhost" uri in
+  let connect_uri ?interrupt { Scheme_host_port.scheme; host; port } =
     let open Async_unix.Unix in
     (* TODO: Cache DNS lookups until they expire *)
     let%bind addr =
@@ -34,15 +33,12 @@ module Net = struct
       | _ -> raise (Failed_to_resolve_host host)
     in
     let%bind mode =
-      match Uri.scheme uri with
-      | Some "https" ->
+      match scheme with
+      | "https" ->
         let%map config = Ssl.default_ssl_config ~hostname:host () in
-        let port = Uri.port uri |> Option.value ~default:443 in
         `OpenSSL (addr, port, config)
-      | Some "http" | None ->
-        let port = Uri.port uri |> Option.value ~default:80 in
-        Deferred.return @@ `TCP (addr, port)
-      | Some scheme -> raise (Unknown_uri_scheme scheme)
+      | "http" -> Deferred.return @@ `TCP (addr, port)
+      | scheme -> raise (Unknown_uri_scheme scheme)
     in
     Conduit_async.V2.connect ?interrupt mode
   ;;
@@ -56,8 +52,8 @@ type t' =
 (* we can't send concurrent requests over HTTP/1 *)
 type t = t' Sequencer.t
 
-let connect ?interrupt uri =
-  Net.connect_uri ?interrupt uri
+let connect ?interrupt scheme_host_port =
+  Net.connect_uri ?interrupt scheme_host_port
   >>| fun (ic, oc) ->
   let t = { ic; oc } |> Sequencer.create ~continue_on_error:false in
   Throttle.at_kill t (fun { ic; oc } ->

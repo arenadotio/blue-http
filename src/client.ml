@@ -2,27 +2,6 @@ open Core_kernel
 open Async_kernel
 open Async_unix
 
-module Scheme_host_port = struct
-  module T = struct
-    type t =
-      { scheme : string
-      ; host : string
-      ; port : int
-      }
-    [@@deriving compare, hash, sexp]
-  end
-
-  include T
-  module Table = Hashtbl.Make (T)
-
-  let of_uri uri =
-    { scheme = Uri.scheme uri |> Option.value ~default:"http"
-    ; host = Uri.host_with_default ~default:"localhost" uri
-    ; port = Uri.port uri |> Option.value ~default:80
-    }
-  ;;
-end
-
 type t =
   { connections : Connection.t Pool.t Scheme_host_port.Table.t
   ; max_connections_per_host : int
@@ -54,9 +33,21 @@ let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
               Pool.create
                 ~max_elements:t.max_connections_per_host
                 ~expire_timeout:t.connection_expire_timeout
-                ~new_item:(fun () -> Connection.connect ?interrupt uri)
-                ~kill_item:Connection.close
-                ~on_empty:(fun () -> Hashtbl.remove t.connections key)
+                ~new_item:(fun () ->
+                  Log.Global.info
+                    "Making new connection to %s"
+                    (Scheme_host_port.to_string key);
+                  Connection.connect ?interrupt key)
+                ~kill_item:(fun t ->
+                  Log.Global.info
+                    "Closing connection to %s"
+                    (Scheme_host_port.to_string key);
+                  Connection.close t)
+                ~on_empty:(fun () ->
+                  Log.Global.info
+                    "Last connection to %s closed"
+                    (Scheme_host_port.to_string key);
+                  Hashtbl.remove t.connections key)
                 ()
             in
             Hashtbl.set t.connections ~key ~data:pool;
