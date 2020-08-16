@@ -28,10 +28,9 @@ let create ~max_elements ~expire_timeout ~new_item ~kill_item ?(on_empty = Fn.id
 
 let close { items; on_empty; _ } =
   Hashtbl.data items
-  |> List.map ~f:(fun { value; _ } ->
+  |> Deferred.List.iter ~how:`Parallel ~f:(fun { value; _ } ->
          Throttle.kill value;
          Throttle.cleaned value)
-  |> Deferred.all_unit
   >>| fun () -> on_empty ()
 ;;
 
@@ -73,9 +72,10 @@ let enqueue
       (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
          cleanup function *)
       Throttle.at_kill value (fun item ->
+          kill_item_f item
+          >>| fun () ->
           Hashtbl.remove items key;
-          if Hashtbl.is_empty items then on_empty ();
-          kill_item_f item);
+          if Hashtbl.is_empty items then on_empty ());
       Hashtbl.add_exn items ~key ~data:item;
       run item)
     else (

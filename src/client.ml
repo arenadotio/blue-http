@@ -24,8 +24,7 @@ let create
 let close { connections; _ } =
   (* Pool.close deletes from connections from we need to iterate over a copy to avoid mutation during iteration *)
   Hashtbl.data connections
-  |> List.map ~f:(fun pool -> Pool.close pool)
-  |> Deferred.all_unit
+  |> Deferred.List.iter ~how:`Parallel ~f:(fun pool -> Pool.close pool)
 ;;
 
 let make_pool
