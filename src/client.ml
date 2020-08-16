@@ -21,38 +21,46 @@ let create
   }
 ;;
 
+let make_pool
+    ?interrupt
+    { max_connections_per_host; connection_expire_timeout; connections; _ }
+    scheme_host_port
+  =
+  Pool.create
+    ~max_elements:max_connections_per_host
+    ~expire_timeout:connection_expire_timeout
+    ~new_item:(fun () ->
+      Log.Global.info
+        "Making new connection to %s"
+        (Scheme_host_port.to_string scheme_host_port);
+      Connection.connect ?interrupt scheme_host_port)
+    ~kill_item:(fun t ->
+      Log.Global.info
+        "Closing connection to %s"
+        (Scheme_host_port.to_string scheme_host_port);
+      Connection.close t)
+    ~on_empty:(fun () ->
+      Log.Global.info
+        "Last connection to %s closed"
+        (Scheme_host_port.to_string scheme_host_port);
+      Hashtbl.remove connections scheme_host_port)
+    ()
+;;
+
+let find_or_make_pool ?interrupt t uri =
+  let key = Scheme_host_port.of_uri uri in
+  match Hashtbl.find t.connections key with
+  | Some pool -> pool
+  | None ->
+    let pool = make_pool ?interrupt t key in
+    Hashtbl.set t.connections ~key ~data:pool;
+    pool
+;;
+
 let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
   let rec loop ~is_first_request =
     Monitor.try_with (fun () ->
-        let pool =
-          let key = Scheme_host_port.of_uri uri in
-          match Hashtbl.find t.connections key with
-          | Some pool -> pool
-          | None ->
-            let pool =
-              Pool.create
-                ~max_elements:t.max_connections_per_host
-                ~expire_timeout:t.connection_expire_timeout
-                ~new_item:(fun () ->
-                  Log.Global.info
-                    "Making new connection to %s"
-                    (Scheme_host_port.to_string key);
-                  Connection.connect ?interrupt key)
-                ~kill_item:(fun t ->
-                  Log.Global.info
-                    "Closing connection to %s"
-                    (Scheme_host_port.to_string key);
-                  Connection.close t)
-                ~on_empty:(fun () ->
-                  Log.Global.info
-                    "Last connection to %s closed"
-                    (Scheme_host_port.to_string key);
-                  Hashtbl.remove t.connections key)
-                ()
-            in
-            Hashtbl.set t.connections ~key ~data:pool;
-            pool
-        in
+        let pool = find_or_make_pool ?interrupt t uri in
         Pool.enqueue pool (fun connection ->
             Connection.call ?headers ?chunked ?body connection meth uri))
     >>= function
