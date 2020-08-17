@@ -9,8 +9,7 @@ type 'a item =
   }
 
 type 'a t =
-  { items : 'a item Uuid.Table.t
-  ; mutation_sequencer : unit Sequencer.t
+  { items : 'a item Deferred.t Uuid.Table.t
   ; max_elements : int
   ; expire_timeout : Time.Span.t
   ; new_item_f : unit -> 'a Deferred.t
@@ -29,7 +28,6 @@ let create
     ()
   =
   { items = Uuid.Table.create ()
-  ; mutation_sequencer = Sequencer.create ~continue_on_error:true ()
   ; max_elements
   ; expire_timeout
   ; new_item_f = new_item
@@ -41,11 +39,10 @@ let create
 
 let length { items; _ } = Hashtbl.length items
 
-let close { items; mutation_sequencer; on_empty; _ } =
-  Throttle.enqueue mutation_sequencer
-  @@ fun () ->
+let close { items; on_empty; _ } =
   Hashtbl.data items
-  |> Deferred.List.iter ~how:`Parallel ~f:(fun { value; _ } ->
+  |> Deferred.List.iter ~how:`Parallel ~f:(fun item ->
+         let%bind { value; _ } = item in
          Throttle.kill value;
          Throttle.cleaned value)
   >>| fun () -> on_empty ()
@@ -53,7 +50,6 @@ let close { items; mutation_sequencer; on_empty; _ } =
 
 let rec enqueue
     ({ items
-     ; mutation_sequencer
      ; max_elements
      ; expire_timeout
      ; new_item_f
@@ -64,38 +60,44 @@ let rec enqueue
      } as t)
     f
   =
-  (* Try to find an existing item that's not in-use *)
-  let existing_item =
-    Hashtbl.data items
-    |> List.find ~f:(fun item -> Throttle.num_jobs_running item.value = 0)
-  in
   let%bind item =
-    Throttle.enqueue mutation_sequencer
-    @@ fun () ->
-    (* Add a new item if there's space in the queue and then use that *)
-    match existing_item with
-    | None when Hashtbl.length items < max_elements ->
-      let%map value = new_item_f () >>| Sequencer.create ~continue_on_error:false in
-      let item = { value; last_used_uuid = Uuid_unix.create () }
-      and key = Uuid_unix.create () in
-      (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
+    (* Try to find an existing item that's not in-use *)
+    Hashtbl.data items
+    |> Deferred.List.find_map ~f:(fun item ->
+           let%map ({ value; _ } as item) = item in
+           if Throttle.num_jobs_running value = 0 then Some item else None)
+    >>= function
+    | Some item -> return item
+    | None ->
+      (* Add a new item if there's space in the queue and then use that *)
+      if Hashtbl.length items < max_elements
+      then (
+        let key = Uuid_unix.create () in
+        let item =
+          let%map value = new_item_f () >>| Sequencer.create ~continue_on_error:false in
+          (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
          cleanup function *)
-      Throttle.at_kill value (fun item ->
-          Throttle.enqueue mutation_sequencer
-          @@ fun () ->
-          Hashtbl.remove items key;
-          Monitor.protect
-            (fun () -> kill_item_f item)
-            ~finally:(fun () ->
-              if Hashtbl.is_empty items then on_empty ();
-              Deferred.unit));
-      Hashtbl.add_exn items ~key ~data:item;
-      item
-    | _ ->
-      Hashtbl.data items
-      |> List.map ~f:(fun item ->
-             choice (Throttle.capacity_available item.value) (Fn.const item))
-      |> Deferred.choose
+          Throttle.at_kill value (fun item ->
+              Hashtbl.remove items key;
+              Monitor.protect
+                (fun () -> kill_item_f item)
+                ~finally:(fun () ->
+                  (* Give any other processes using this pool a chance to add more items before cleaning up *)
+                  Scheduler.yield ()
+                  >>| fun () -> if Hashtbl.is_empty items then on_empty ()));
+          { value; last_used_uuid = Uuid_unix.create () }
+        in
+        Hashtbl.add_exn items ~key ~data:item;
+        item)
+      else
+        (* If the queue is full, wait for one of the existing items or for the size to change *)
+        Hashtbl.data items
+        |> List.map ~f:(fun item ->
+               choice
+                 (let%bind item = item in
+                  Throttle.capacity_available item.value >>| fun () -> item)
+                 Fn.id)
+        |> Deferred.choose
   in
   if Throttle.is_dead item.value
   then Throttle.cleaned item.value >>= fun () -> enqueue t f
