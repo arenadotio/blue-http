@@ -12,9 +12,9 @@ type 'a t =
   { items : 'a item Deferred.t Uuid.Table.t
   ; max_elements : int
   ; expire_timeout : Time.Span.t
-  ; new_item_f : unit -> 'a Deferred.t
-  ; kill_item_f : 'a -> unit Deferred.t
-  ; check_item_f : 'a -> bool Deferred.t
+  ; new_item : unit -> 'a Deferred.t
+  ; kill_item : 'a -> unit Deferred.t
+  ; check_item : 'a -> bool Deferred.t
   ; on_empty : unit -> unit
   }
 
@@ -30,9 +30,9 @@ let create
   { items = Uuid.Table.create ()
   ; max_elements
   ; expire_timeout
-  ; new_item_f = new_item
-  ; kill_item_f = kill_item
-  ; check_item_f = check_item
+  ; new_item
+  ; kill_item
+  ; check_item
   ; on_empty
   }
 ;;
@@ -49,15 +49,8 @@ let close { items; on_empty; _ } =
 ;;
 
 let rec enqueue
-    ({ items
-     ; max_elements
-     ; expire_timeout
-     ; new_item_f
-     ; kill_item_f
-     ; check_item_f
-     ; on_empty
-     ; _
-     } as t)
+    ({ items; max_elements; expire_timeout; new_item; kill_item; check_item; on_empty; _ }
+    as t)
     f
   =
   let%bind item =
@@ -74,13 +67,13 @@ let rec enqueue
       then (
         let key = Uuid_unix.create () in
         let item =
-          let%map value = new_item_f () >>| Sequencer.create ~continue_on_error:false in
+          let%map value = new_item () >>| Sequencer.create ~continue_on_error:false in
           (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
          cleanup function *)
           Throttle.at_kill value (fun item ->
               Hashtbl.remove items key;
               Monitor.protect
-                (fun () -> kill_item_f item)
+                (fun () -> kill_item item)
                 ~finally:(fun () ->
                   (* Give any other processes using this pool a chance to add more items before cleaning up *)
                   Scheduler.yield ()
@@ -110,7 +103,7 @@ let rec enqueue
     item.last_used_uuid <- uuid;
     let%bind res =
       Throttle.enqueue item.value (fun value ->
-          if%bind check_item_f value
+          if%bind check_item value
           then (
             let%map res = f value in
             `Ok res)
