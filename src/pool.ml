@@ -10,6 +10,7 @@ type 'a item =
 
 type 'a t =
   { items : 'a item Uuid.Table.t
+  ; mutation_sequencer : unit Sequencer.t
   ; max_elements : int
   ; expire_timeout : Time.Span.t
   ; new_item_f : unit -> 'a Deferred.t
@@ -28,6 +29,7 @@ let create
     ()
   =
   { items = Uuid.Table.create ()
+  ; mutation_sequencer = Sequencer.create ~continue_on_error:true ()
   ; max_elements
   ; expire_timeout
   ; new_item_f = new_item
@@ -37,7 +39,11 @@ let create
   }
 ;;
 
-let close { items; on_empty; _ } =
+let length { items; _ } = Hashtbl.length items
+
+let close { items; mutation_sequencer; on_empty; _ } =
+  Throttle.enqueue mutation_sequencer
+  @@ fun () ->
   Hashtbl.data items
   |> Deferred.List.iter ~how:`Parallel ~f:(fun { value; _ } ->
          Throttle.kill value;
@@ -47,6 +53,7 @@ let close { items; on_empty; _ } =
 
 let rec enqueue
     ({ items
+     ; mutation_sequencer
      ; max_elements
      ; expire_timeout
      ; new_item_f
@@ -63,6 +70,8 @@ let rec enqueue
     |> List.find ~f:(fun item -> Throttle.num_jobs_running item.value = 0)
   in
   let%bind item =
+    Throttle.enqueue mutation_sequencer
+    @@ fun () ->
     (* Add a new item if there's space in the queue and then use that *)
     match existing_item with
     | None when Hashtbl.length items < max_elements ->
@@ -72,6 +81,8 @@ let rec enqueue
       (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
          cleanup function *)
       Throttle.at_kill value (fun item ->
+          Throttle.enqueue mutation_sequencer
+          @@ fun () ->
           Hashtbl.remove items key;
           Monitor.protect
             (fun () -> kill_item_f item)

@@ -124,6 +124,23 @@ let () =
                >>= fun () ->
                Pool.enqueue pool Deferred.return >>| [%test_result: T.t] ~expect:t))
         ] )
+    ; ( "race with max_elements"
+      , [ test_case "add 4 elements to 2 element pool" `Quick (fun () ->
+              let pool =
+                let open T in
+                Pool.create
+                  ~max_elements:2
+                  ~expire_timeout:(Time.Span.of_ms 10.)
+                  ~new_item
+                  ~kill_item
+                  ~check_item
+                  ()
+              in
+              [ 1; 2; 3; 4 ]
+              |> Deferred.List.iter ~how:`Parallel ~f:(fun _ ->
+                     Pool.enqueue pool Deferred.return |> Deferred.ignore_m)
+              >>| fun () -> [%test_result: int] (Pool.length pool) ~expect:2)
+        ] )
     ]
   |> Alcotest_async.run "test_tls"
 ;;
