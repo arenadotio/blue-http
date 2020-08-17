@@ -1,5 +1,5 @@
 (tests
- (names test_redirect test_tls)
+ (names test_pool test_redirect test_tls)
  (package blue_http)
  (libraries alcotest-async blue_http)
  (preprocess
