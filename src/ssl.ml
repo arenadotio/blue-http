@@ -73,15 +73,14 @@ let verify_certificate_host ~hostname conn =
       | true -> true))
 ;;
 
-let default_ssl_config ?hostname () =
+let default_ssl_config ~hostname () =
   let%map ca_file = Lazy_deferred.force_exn default_ca_file in
   let verify conn =
     [ Option.map ca_file ~f:(fun _ -> Conduit_async.Ssl.verify_certificate)
-    ; Option.map hostname ~f:(fun hostname conn ->
-          verify_certificate_host ~hostname conn |> Deferred.return)
+    ; Some (fun conn -> verify_certificate_host ~hostname conn |> Deferred.return)
     ]
     |> List.filter_opt
     |> Deferred.List.for_all ~f:(fun test -> test conn)
   in
-  Conduit_async.V2.Ssl.Config.create ?ca_file ~verify ?hostname ()
+  Conduit_async.V2.Ssl.Config.create ?ca_file ~verify ~hostname ()
 ;;
