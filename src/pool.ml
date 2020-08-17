@@ -96,7 +96,7 @@ let rec enqueue
            let%map ({ value; _ } as item) = item in
            if Throttle.num_jobs_running value = 0 then Some item else None)
     >>= function
-    | Some item -> return (`Item_available item)
+    | Some item -> return (`Item_available (item, `Reuse))
     | None ->
       (* Add a new item if there's space in the queue and then use that *)
       if Hashtbl.length items < max_elements
@@ -120,7 +120,7 @@ let rec enqueue
         Hashtbl.add_exn items ~key ~data:item;
         Condition.broadcast mutated ();
         let%map item = item in
-        `Item_available item)
+        `Item_available (item, `New))
       else
         (* If the queue is full, wait for one of the existing items or for the size to change *)
         choice (Condition.wait mutated) (fun () -> `Mutated)
@@ -129,12 +129,12 @@ let rec enqueue
                   choice
                     (let%bind item = item in
                      Throttle.capacity_available item.value >>| fun () -> item)
-                    (fun item -> `Item_available item)))
+                    (fun item -> `Item_available (item, `Reuse))))
         |> Deferred.choose
   in
   match item with
   | `Mutated -> enqueue t f
-  | `Item_available item ->
+  | `Item_available (item, new_or_reused) ->
     if Throttle.is_dead item.value
     then Throttle.cleaned item.value >>= fun () -> enqueue t f
     else if Throttle.num_jobs_running item.value > 0
@@ -148,7 +148,14 @@ let rec enqueue
         Throttle.enqueue item.value (fun value ->
             if%bind check_item value
             then (
-              let%map res = f value in
+              let%map res =
+                f
+                  ~is_new:
+                    (match new_or_reused with
+                    | `New -> true
+                    | `Reuse -> false)
+                  value
+              in
               `Ok res)
             else return `Check_failed)
       in

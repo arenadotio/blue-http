@@ -42,10 +42,16 @@ let () =
                        ~check_item
                        ()
                    in
-                   let%bind t = Pool.enqueue pool Deferred.return in
+                   let%bind t =
+                     Pool.enqueue pool (fun ~is_new t ->
+                         [%test_result: bool] is_new ~expect:true;
+                         Deferred.return t)
+                   in
                    after wait
                    >>= fun () ->
-                   Pool.enqueue pool (fun t -> return t)
+                   Pool.enqueue pool (fun ~is_new t ->
+                       [%test_result: bool] is_new ~expect:false;
+                       Deferred.return t)
                    >>| [%test_result: T.t] ~expect:t
                    >>| fun () -> [%test_result: bool] t.killed ~expect:false)) )
     ; ( "wait > expire_timeout"
@@ -70,10 +76,16 @@ let () =
                        ~check_item
                        ()
                    in
-                   let%bind t = Pool.enqueue pool Deferred.return in
+                   let%bind t =
+                     Pool.enqueue pool (fun ~is_new t ->
+                         [%test_result: bool] is_new ~expect:true;
+                         Deferred.return t)
+                   in
                    after wait
                    >>= fun () ->
-                   Pool.enqueue pool Deferred.return
+                   Pool.enqueue pool (fun ~is_new t ->
+                       [%test_result: bool] is_new ~expect:true;
+                       Deferred.return t)
                    >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t
                    >>| fun () -> [%test_result: bool] t.killed ~expect:true)) )
     ; ( "killed"
@@ -88,9 +100,15 @@ let () =
                   ~check_item
                   ()
               in
-              let%bind t = Pool.enqueue pool Deferred.return in
+              let%bind t =
+                Pool.enqueue pool (fun ~is_new t ->
+                    [%test_result: bool] is_new ~expect:true;
+                    Deferred.return t)
+              in
               t.killed <- true;
-              Pool.enqueue pool Deferred.return
+              Pool.enqueue pool (fun ~is_new t ->
+                  [%test_result: bool] is_new ~expect:true;
+                  Deferred.return t)
               >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t)
         ] )
     ; ( "wait > expire_timeout with re-use"
@@ -116,13 +134,20 @@ let () =
                    ~check_item
                    ()
                in
-               let%bind t = Pool.enqueue pool Deferred.return in
+               let%bind t =
+                 Pool.enqueue pool (fun ~is_new t ->
+                     [%test_result: bool] is_new ~expect:true;
+                     Deferred.return t)
+               in
                List.init num_waits ~f:(Fn.const ())
                |> Deferred.List.iter ~how:`Sequential ~f:(fun () ->
                       after wait
-                      >>= fun () -> Pool.enqueue pool Deferred.return |> Deferred.ignore_m)
+                      >>= fun () -> Pool.enqueue pool (fun ~is_new:_ _t -> Deferred.unit))
                >>= fun () ->
-               Pool.enqueue pool Deferred.return >>| [%test_result: T.t] ~expect:t))
+               Pool.enqueue pool (fun ~is_new t ->
+                   [%test_result: bool] is_new ~expect:false;
+                   Deferred.return t)
+               >>| [%test_result: T.t] ~expect:t))
         ] )
     ; ( "race"
       , [ test_case "add 4 elements to 2 element pool" `Quick (fun () ->
@@ -138,7 +163,7 @@ let () =
               in
               [ 1; 2; 3; 4 ]
               |> Deferred.List.iter ~how:`Parallel ~f:(fun _ ->
-                     Pool.enqueue pool Deferred.return |> Deferred.ignore_m)
+                     Pool.enqueue pool (fun ~is_new:_ _t -> Deferred.unit))
               >>| fun () -> [%test_result: int] (Pool.length pool) ~expect:2)
         ; test_case "kill item while other waiting" `Quick (fun () ->
               let pool =
@@ -152,8 +177,13 @@ let () =
                   ()
               in
               let blocker = Ivar.create () in
-              let%bind first_item = Pool.enqueue pool Deferred.return in
-              Pool.enqueue pool (fun item ->
+              let%bind first_item =
+                Pool.enqueue pool (fun ~is_new t ->
+                    [%test_result: bool] is_new ~expect:true;
+                    Deferred.return t)
+              in
+              Pool.enqueue pool (fun ~is_new item ->
+                  [%test_result: bool] is_new ~expect:false;
                   item.killed <- true;
                   Ivar.read blocker)
               |> don't_wait_for;
@@ -162,7 +192,7 @@ let () =
               another one, and the second one should detect that the pool size changed and will restart its wait *)
                 [ (); () ]
                 |> Deferred.List.map ~how:`Parallel ~f:(fun () ->
-                       Pool.enqueue pool Deferred.return)
+                       Pool.enqueue pool (fun ~is_new:_ t -> Deferred.return t))
               in
               Scheduler.yield ()
               >>= fun () ->

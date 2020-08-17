@@ -67,45 +67,40 @@ let find_or_make_pool ?interrupt t uri =
 ;;
 
 let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
-  let rec loop ~is_first_request =
-    Monitor.try_with (fun () ->
-        let pool = find_or_make_pool ?interrupt t uri in
-        let ivar_res = Ivar.create () in
-        Pool.enqueue pool (fun connection ->
-            let%bind res =
-              Monitor.try_with ~extract_exn:true (fun () ->
-                  Connection.call ?headers ?chunked ?body connection meth uri)
-            in
-            Ivar.fill ivar_res res;
-            match res with
-            | Ok (_, `Pipe body) ->
-              (* We need to wait for the body to finish being read before we can re-use this connection *)
-              Pipe.closed body
-            | _ -> Deferred.unit)
-        |> don't_wait_for;
-        Ivar.read ivar_res >>| Result.ok_exn)
-    >>= function
-    | Ok response -> return response
-    | Error e ->
-      (* We have no way of detecting if the remote side closed a connection before we were able to make a request,
-         so always make a request and retry once if the connection was closed *)
-      let remote_connection_closed =
-        match Monitor.extract_exn e with
-        (* This exception is thrown by Cohttp if the other end hangs up *)
-        | Connection.Connection_closed_by_remote_host when is_first_request ->
-          true
-          (* This exception is thrown if multiple requests are queued when the connection is closed *)
-        | e when Exn.to_string e |> String.is_substring ~substring:"throttle aborted job"
-          -> true
-        | _ -> false
-      in
-      if remote_connection_closed
-      then (
-        Log.Global.debug
-          "Remote connection to %s was closed, opening a new one"
-          (Uri.to_string uri);
-        loop ~is_first_request:false)
-      else raise e
-  in
-  loop ~is_first_request:true
+  Deferred.repeat_until_finished () (fun () ->
+      let pool = find_or_make_pool ?interrupt t uri
+      and ivar_res = Ivar.create ()
+      and is_new_connection = ref false in
+      Pool.enqueue pool (fun ~is_new connection ->
+          is_new_connection := is_new;
+          let%bind res =
+            Monitor.try_with ~extract_exn:true (fun () ->
+                Connection.call ?headers ?chunked ?body connection meth uri)
+          in
+          Ivar.fill ivar_res res;
+          match res with
+          | Ok (_, `Pipe body) ->
+            (* We need to wait for the body to finish being read before we can re-use this connection *)
+            Pipe.closed body
+          | _ -> Deferred.unit)
+      |> don't_wait_for;
+      Ivar.read ivar_res
+      >>| function
+      | Error e ->
+        (* We have no way of detecting if the remote side closed a connection before we were able to make
+           a request,so we just try it and retry if this was a re-used connection *)
+        if match Monitor.extract_exn e with
+           (* This exception is thrown by Connection if the other end hangs up *)
+           | Connection.Connection_closed_by_remote_host when not !is_new_connection ->
+             true
+           | e ->
+             (* This exception is thrown if multiple requests are queued when the connection is closed *)
+             Exn.to_string e |> String.is_substring ~substring:"throttle aborted job"
+        then (
+          Log.Global.debug
+            "Remote connection to %s was closed, opening a new one"
+            (Uri.to_string uri);
+          `Repeat ())
+        else raise e
+      | Ok res -> `Finished res)
 ;;
