@@ -89,7 +89,7 @@ let () =
                    >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t
                    >>| fun () -> [%test_result: bool] t.killed ~expect:true)) )
     ; ( "killed"
-      , [ test_case "killed" `Quick (fun () ->
+      , [ test_case "check failed" `Quick (fun () ->
               let pool =
                 let open T in
                 Pool.create
@@ -106,6 +106,33 @@ let () =
                     Deferred.return t)
               in
               t.killed <- true;
+              Pool.enqueue pool (fun ~is_new t ->
+                  [%test_result: bool] is_new ~expect:true;
+                  Deferred.return t)
+              >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t)
+        ; test_case "exception thrown" `Quick (fun () ->
+              let pool =
+                let open T in
+                Pool.create
+                  ~max_elements:1
+                  ~expire_timeout:(Time.Span.of_day 100.)
+                  ~new_item
+                  ~kill_item
+                  ~check_item
+                  ()
+              in
+              let%bind t =
+                Pool.enqueue pool (fun ~is_new t ->
+                    [%test_result: bool] is_new ~expect:true;
+                    Deferred.return t)
+              in
+              let%bind () =
+                Deferred.Or_error.try_with (fun () ->
+                    Pool.enqueue pool (fun ~is_new _ ->
+                        [%test_result: bool] is_new ~expect:false;
+                        raise Caml.Not_found))
+                >>| [%test_pred: unit Or_error.t] Or_error.is_error
+              in
               Pool.enqueue pool (fun ~is_new t ->
                   [%test_result: bool] is_new ~expect:true;
                   Deferred.return t)
