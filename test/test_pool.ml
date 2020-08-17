@@ -124,7 +124,7 @@ let () =
                >>= fun () ->
                Pool.enqueue pool Deferred.return >>| [%test_result: T.t] ~expect:t))
         ] )
-    ; ( "race with max_elements"
+    ; ( "race"
       , [ test_case "add 4 elements to 2 element pool" `Quick (fun () ->
               let pool =
                 let open T in
@@ -140,6 +140,40 @@ let () =
               |> Deferred.List.iter ~how:`Parallel ~f:(fun _ ->
                      Pool.enqueue pool Deferred.return |> Deferred.ignore_m)
               >>| fun () -> [%test_result: int] (Pool.length pool) ~expect:2)
+        ; test_case "kill item while other waiting" `Quick (fun () ->
+              let pool =
+                let open T in
+                Pool.create
+                  ~max_elements:1
+                  ~expire_timeout:(Time.Span.of_day 100.)
+                  ~new_item
+                  ~kill_item
+                  ~check_item
+                  ()
+              in
+              let blocker = Ivar.create () in
+              let%bind first_item = Pool.enqueue pool Deferred.return in
+              Pool.enqueue pool (fun item ->
+                  item.killed <- true;
+                  Ivar.read blocker)
+              |> don't_wait_for;
+              let d =
+                (* Enqueue two requests. The first one will detect that the item has been killed and will create
+              another one, and the second one should detect that the pool size changed and will restart its wait *)
+                [ (); () ]
+                |> Deferred.List.map ~how:`Parallel ~f:(fun () ->
+                       Pool.enqueue pool Deferred.return)
+              in
+              Scheduler.yield ()
+              >>= fun () ->
+              Ivar.fill blocker ();
+              d
+              >>| fun uuids ->
+              (* The two requests should get the same UUID, and it should not be the first item, which was killed *)
+              [%test_pred: T.t list] (List.contains_dup ~compare:T.compare) uuids;
+              List.iter
+                uuids
+                ~f:([%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:first_item))
         ] )
     ]
   |> Alcotest_async.run "test_tls"
