@@ -61,7 +61,7 @@ let connect ?interrupt scheme_host_port =
   t
 ;;
 
-let is_closed { ic; oc } = Reader.is_closed ic && Writer.is_closed oc
+let is_closed { ic; oc } = Reader.is_closed ic || Writer.is_closed oc
 
 exception Connection_closed_by_remote_host [@@deriving sexp_of]
 
