@@ -2,14 +2,40 @@ open Core_kernel
 open Async_kernel
 open Async_unix
 
-type 'a item =
-  { value : 'a Sequencer.t
-  ; (* TODO: We need this ID to be unique per-process but these UUID's are probably overkill *)
-    mutable last_used_uuid : Uuid.t
-  }
+module Unique_id = struct
+  module T = struct
+    type t = int64 [@@deriving compare, hash, sexp]
+  end
+
+  include T
+  module Table = Hashtbl.Make (T)
+
+  (* Even if we incremented this counter every nanosecond, we could generate unique ID's for over 500 years
+     https://www.wolframalpha.com/input/?i=%282%5E64+-+1%29+*+1+ns *)
+  let counter = ref Int64.min_value
+
+  let make () =
+    let t = !counter in
+    Int64.incr counter;
+    t
+  ;;
+
+  let ( = ) a b = compare a b = 0
+end
+
+let default_last_used_by = Unique_id.make ()
+
+module Item = struct
+  type 'a t =
+    { value : 'a Sequencer.t
+    ; mutable last_used_by : Unique_id.t
+    }
+
+  let make value = { value; last_used_by = default_last_used_by }
+end
 
 type 'a t =
-  { items : 'a item Deferred.t Uuid.Table.t
+  { items : 'a Item.t Deferred.t Unique_id.Table.t
   ; mutated : unit Condition.t
   ; max_elements : int
   ; expire_timeout : Time.Span.t
@@ -28,7 +54,7 @@ let create
     ~check_item
     ()
   =
-  { items = Uuid.Table.create ()
+  { items = Unique_id.Table.create ()
   ; mutated = Condition.create ()
   ; max_elements
   ; expire_timeout
@@ -75,7 +101,7 @@ let rec enqueue
       (* Add a new item if there's space in the queue and then use that *)
       if Hashtbl.length items < max_elements
       then (
-        let key = Uuid_unix.create () in
+        let key = Unique_id.make () in
         let item =
           let%map value = new_item () >>| Sequencer.create ~continue_on_error:false in
           (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
@@ -89,7 +115,7 @@ let rec enqueue
                   (* Give any other processes using this pool a chance to add more items before cleaning up *)
                   Scheduler.yield ()
                   >>| fun () -> if Hashtbl.is_empty items then on_empty ()));
-          { value; last_used_uuid = Uuid_unix.create () }
+          Item.make value
         in
         Hashtbl.add_exn items ~key ~data:item;
         Condition.broadcast mutated ();
@@ -114,10 +140,10 @@ let rec enqueue
     else if Throttle.num_jobs_running item.value > 0
     then enqueue t f
     else (
-      (* Update expiration UUID so other expiration processes don't delete this connection
-       while we're using it *)
-      let uuid = Uuid_unix.create () in
-      item.last_used_uuid <- uuid;
+      (* Update expiration last_used_by so other expiration processes don't delete this connection
+         while we're using it *)
+      let unique_id = Unique_id.make () in
+      item.last_used_by <- unique_id;
       let%bind res =
         Throttle.enqueue item.value (fun value ->
             if%bind check_item value
@@ -135,7 +161,7 @@ let rec enqueue
         let expires = Time.(add (now ()) expire_timeout) in
         upon (at expires) (fun () ->
             (* If the uuid doesn't match then some other process has used this item since the expiration process started *)
-            if Uuid.(item.last_used_uuid = uuid)
+            if Unique_id.(item.last_used_by = unique_id)
             then (
               (* UUID matches so nothing else has used this item; time to delete it *)
               Log.Global.debug "Pool item expired";
