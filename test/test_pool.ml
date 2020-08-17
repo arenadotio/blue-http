@@ -35,7 +35,7 @@ let () =
                    let pool =
                      let open T in
                      Pool.create
-                       ~max_elements:1
+                       ~max_elements:2
                        ~expire_timeout
                        ~new_item
                        ~kill_item
@@ -63,7 +63,7 @@ let () =
                    let pool =
                      let open T in
                      Pool.create
-                       ~max_elements:1
+                       ~max_elements:2
                        ~expire_timeout
                        ~new_item
                        ~kill_item
@@ -90,9 +90,6 @@ let () =
               in
               let%bind t = Pool.enqueue pool Deferred.return in
               t.killed <- true;
-              (* FIXME: Why do we need this? *)
-              Deferred.unit
-              >>= fun () ->
               Pool.enqueue pool Deferred.return
               >>| [%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:t)
         ] )
@@ -112,7 +109,7 @@ let () =
                let pool =
                  let open T in
                  Pool.create
-                   ~max_elements:1
+                   ~max_elements:2
                    ~expire_timeout
                    ~new_item
                    ~kill_item

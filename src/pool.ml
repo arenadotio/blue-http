@@ -57,39 +57,34 @@ let rec enqueue
      } as t)
     f
   =
-  let%bind item =
-    (* First try to find an unused pre-built item *)
+  (* Try to find an existing item that's not in-use *)
+  let existing_item =
     Hashtbl.data items
-    |> List.find ~f:(fun { value; _ } -> Throttle.num_jobs_running value = 0)
-    |> function
-    | Some item -> return item
-    | None ->
-      (* Add a new item if there's space in the queue and then use that *)
-      if Hashtbl.length items < max_elements
-      then (
-        let%map value = new_item_f () >>| Sequencer.create ~continue_on_error:false in
-        let item = { value; last_used_uuid = Uuid_unix.create () }
-        and key = Uuid_unix.create () in
-        (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
+    |> List.find ~f:(fun item -> Throttle.num_jobs_running item.value = 0)
+  in
+  let%bind item =
+    (* Add a new item if there's space in the queue and then use that *)
+    match existing_item with
+    | None when Hashtbl.length items < max_elements ->
+      let%map value = new_item_f () >>| Sequencer.create ~continue_on_error:false in
+      let item = { value; last_used_uuid = Uuid_unix.create () }
+      and key = Uuid_unix.create () in
+      (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
          cleanup function *)
-        Throttle.at_kill value (fun item ->
-            Hashtbl.remove items key;
-            Monitor.protect
-              (fun () -> kill_item_f item)
-              ~finally:(fun () ->
-                if Hashtbl.is_empty items then on_empty ();
-                Deferred.unit));
-        Hashtbl.add_exn items ~key ~data:item;
-        item)
-      else (
-        (* Wait for an item in the queue *)
-        let%map item =
-          Hashtbl.data items
-          |> List.map ~f:(fun item ->
-                 choice (Throttle.prior_jobs_done item.value) (Fn.const item))
-          |> Deferred.choose
-        in
-        item)
+      Throttle.at_kill value (fun item ->
+          Hashtbl.remove items key;
+          Monitor.protect
+            (fun () -> kill_item_f item)
+            ~finally:(fun () ->
+              if Hashtbl.is_empty items then on_empty ();
+              Deferred.unit));
+      Hashtbl.add_exn items ~key ~data:item;
+      item
+    | _ ->
+      Hashtbl.data items
+      |> List.map ~f:(fun item ->
+             choice (Throttle.capacity_available item.value) (Fn.const item))
+      |> Deferred.choose
   in
   if Throttle.is_dead item.value
   then Throttle.cleaned item.value >>= fun () -> enqueue t f
