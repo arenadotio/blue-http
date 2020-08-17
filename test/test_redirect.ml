@@ -34,7 +34,7 @@ let () =
       , [ 0; 1; 2 ]
         |> List.map ~f:(fun redirects ->
                test_case (sprintf !"redirects=%d" redirects) `Quick (fun () ->
-                   Blue_http.request_ignore_body
+                   Blue_http.call_ignore_body
                      ~max_redirects:redirects
                      `GET
                      (Uri.with_query' base_uri [ "n", Int.to_string redirects ])
@@ -47,7 +47,7 @@ let () =
                  (sprintf !"redirects=%d, max_redirects:%d" redirects max_redirects)
                  `Quick
                  (fun () ->
-                   Blue_http.request_ignore_body
+                   Blue_http.call_ignore_body
                      ~max_redirects
                      `GET
                      (Uri.with_query' base_uri [ "n", Int.to_string redirects ])
@@ -60,14 +60,14 @@ let () =
                  (sprintf !"redirects=%d, max_redirects:%d" redirects max_redirects)
                  `Quick
                  (fun () ->
-                   Blue_http.request_ignore_body
+                   Blue_http.call_ignore_body
                      ~max_redirects
                      `GET
                      (Uri.with_query' base_uri [ "n", Int.to_string redirects ])
                    >>| [%test_pred: Cohttp.Response.t] response_is_redirect)) )
     ; ( "redirects loop"
       , [ test_case "infinite loop" `Quick (fun () ->
-              Blue_http.request_ignore_body
+              Blue_http.call_ignore_body
                 ~max_redirects:Int.max_value
                 `GET
                 (Uri.with_query' base_uri [ "n", "-1" ])

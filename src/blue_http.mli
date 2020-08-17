@@ -11,7 +11,7 @@ end
     This default is only used if [?max_directs] is not passed to the functions below. *)
 val set_default_max_redirects : int -> unit
 
-val request_stream
+val call_stream
   :  ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?headers:Cohttp.Header.t
@@ -22,7 +22,7 @@ val request_stream
   -> Uri.t
   -> (Cohttp.Response.t * Cohttp_async.Body.t) Deferred.t
 
-val request
+val call
   :  ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?headers:Cohttp.Header.t
@@ -33,7 +33,7 @@ val request
   -> Uri.t
   -> (Cohttp.Response.t * string) Deferred.t
 
-val request_ignore_body
+val call_ignore_body
   :  ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?headers:Cohttp.Header.t
@@ -42,4 +42,34 @@ val request_ignore_body
   -> ?client:Client.t
   -> Cohttp.Code.meth
   -> Uri.t
+  -> Cohttp.Response.t Deferred.t
+
+val request_stream
+  :  ?max_redirects:int
+  -> ?interrupt:unit Deferred.t
+  -> ?chunked:bool
+  -> ?body:Cohttp_async.Body.t
+  -> ?uri:Uri.t
+  -> ?client:Client.t
+  -> Cohttp.Request.t
+  -> (Cohttp.Response.t * Cohttp_async.Body.t) Deferred.t
+
+val request
+  :  ?max_redirects:int
+  -> ?interrupt:unit Deferred.t
+  -> ?chunked:bool
+  -> ?body:Cohttp_async.Body.t
+  -> ?uri:Uri.t
+  -> ?client:Client.t
+  -> Cohttp.Request.t
+  -> (Cohttp.Response.t * string) Deferred.t
+
+val request_ignore_body
+  :  ?max_redirects:int
+  -> ?interrupt:unit Deferred.t
+  -> ?chunked:bool
+  -> ?body:Cohttp_async.Body.t
+  -> ?uri:Uri.t
+  -> ?client:Client.t
+  -> Cohttp.Request.t
   -> Cohttp.Response.t Deferred.t
