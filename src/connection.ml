@@ -76,11 +76,12 @@ let request ~body { ic; oc } req =
     let body =
       match Response.has_body resp with
       | `Yes | `Unknown ->
-        Response.make_body_reader resp ic
-        |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk
-      | `No -> Pipe.empty ()
+        `Pipe
+          (Response.make_body_reader resp ic
+          |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk)
+      | `No -> `Empty
     in
-    resp, `Pipe body
+    resp, body
 ;;
 
 let call ?headers ?(chunked = false) ?(body = `Empty) t meth uri =
