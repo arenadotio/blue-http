@@ -45,43 +45,50 @@ end
 type t =
   { ic : Reader.t
   ; oc : Writer.t
+  ; mutable connection_state : [ `New_connection | `Reused_connection ]
   }
 
-let close { ic; oc } =
+let close { ic; oc; _ } =
   Deferred.both (Writer.close oc) (Reader.close ic) >>| fun ((), ()) -> ()
 ;;
 
 let connect ?interrupt scheme_host_port =
   Net.connect_uri ?interrupt scheme_host_port
   >>| fun (ic, oc) ->
-  let t = { ic; oc } in
+  let t = { ic; oc; connection_state = `New_connection } in
   Deferred.any [ Writer.consumer_left oc; Reader.close_finished ic ]
   >>= (fun () -> close t)
   |> don't_wait_for;
   t
 ;;
 
-let is_closed { ic; oc } = Reader.is_closed ic || Writer.is_closed oc
+let is_closed { ic; oc; _ } = Reader.is_closed ic || Writer.is_closed oc
 
-exception Connection_closed_by_remote_host [@@deriving sexp_of]
+exception Connection_closed_by_remote_host of [ `New_connection | `Reused_connection ]
+[@@deriving sexp_of]
 
-let request ~body { ic; oc } req =
-  Request.write (Cohttp_async.Body_raw.write_body Request.write_body body) req oc
-  >>= fun () ->
-  Response.read ic
-  >>| function
-  | `Eof -> raise Connection_closed_by_remote_host
-  | `Invalid reason -> failwith reason
-  | `Ok resp ->
-    let body =
-      match Response.has_body resp with
-      | `Yes | `Unknown ->
-        `Pipe
-          (Response.make_body_reader resp ic
-          |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk)
-      | `No -> `Empty
-    in
-    resp, body
+let request ~body ({ ic; oc; _ } as t) req =
+  Monitor.protect
+    (fun () ->
+      Request.write (Cohttp_async.Body_raw.write_body Request.write_body body) req oc
+      >>= fun () ->
+      Response.read ic
+      >>| function
+      | `Eof -> raise (Connection_closed_by_remote_host t.connection_state)
+      | `Invalid reason -> failwith reason
+      | `Ok resp ->
+        let body =
+          match Response.has_body resp with
+          | `Yes | `Unknown ->
+            `Pipe
+              (Response.make_body_reader resp ic
+              |> Cohttp_async.Body_raw.pipe_of_body Response.read_body_chunk)
+          | `No -> `Empty
+        in
+        resp, body)
+    ~finally:(fun () ->
+      t.connection_state <- `Reused_connection;
+      Deferred.unit)
 ;;
 
 let call ?headers ?(chunked = false) ?(body = `Empty) t meth uri =

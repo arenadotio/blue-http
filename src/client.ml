@@ -69,10 +69,8 @@ let find_or_make_pool ?interrupt t uri =
 let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
   Deferred.repeat_until_finished () (fun () ->
       let pool = find_or_make_pool ?interrupt t uri
-      and ivar_res = Ivar.create ()
-      and is_new_connection = ref false in
-      Pool.enqueue pool (fun ~is_new connection ->
-          is_new_connection := is_new;
+      and ivar_res = Ivar.create () in
+      Pool.enqueue pool (fun connection ->
           let%bind res =
             Monitor.try_with ~extract_exn:true (fun () ->
                 Connection.call ?headers ?chunked ?body connection meth uri)
@@ -91,8 +89,7 @@ let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
            a request,so we just try it and retry if this was a re-used connection *)
         if match Monitor.extract_exn e with
            (* This exception is thrown by Connection if the other end hangs up *)
-           | Connection.Connection_closed_by_remote_host when not !is_new_connection ->
-             true
+           | Connection.Connection_closed_by_remote_host `Reused_connection -> true
            | e ->
              (* This exception is thrown if multiple requests are queued when the connection is closed *)
              Exn.to_string e |> String.is_substring ~substring:"throttle aborted job"
