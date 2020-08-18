@@ -1,29 +1,9 @@
 open Core_kernel
 open Async_kernel
 open Async_unix
+module Unique_id = Unique_id.Int63 ()
 
-module Unique_id = struct
-  module T = struct
-    type t = int64 [@@deriving compare, hash, sexp]
-  end
-
-  include T
-  module Table = Hashtbl.Make (T)
-
-  (* Even if we incremented this counter every nanosecond, we could generate unique ID's for over 500 years
-     https://www.wolframalpha.com/input/?i=%282%5E64+-+1%29+*+1+ns *)
-  let counter = ref Int64.min_value
-
-  let make () =
-    let t = !counter in
-    Int64.incr counter;
-    t
-  ;;
-
-  let ( = ) a b = compare a b = 0
-end
-
-let default_last_used_by = Unique_id.make ()
+let default_last_used_by = Unique_id.create ()
 
 module Item = struct
   type 'a t =
@@ -101,7 +81,7 @@ let rec enqueue
       (* Add a new item if there's space in the queue and then use that *)
       if Hashtbl.length items < max_elements
       then (
-        let key = Unique_id.make () in
+        let key = Unique_id.create () in
         let item =
           let%map value = new_item () >>| Sequencer.create ~continue_on_error:false in
           (* If an exception occurs or if the item is deleted, remove it from the hashtable and call the user-given
@@ -142,7 +122,7 @@ let rec enqueue
     else (
       (* Update expiration last_used_by so other expiration processes don't delete this connection
          while we're using it *)
-      let unique_id = Unique_id.make () in
+      let unique_id = Unique_id.create () in
       item.last_used_by <- unique_id;
       let%bind res =
         Throttle.enqueue item.value (fun value ->
