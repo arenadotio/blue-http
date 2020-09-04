@@ -33,6 +33,7 @@ let make_pool
     scheme_host_port
   =
   Pool.create
+    ~name:(Scheme_host_port.to_string scheme_host_port)
     ~max_elements:max_connections_per_host
     ~expire_timeout:connection_expire_timeout
     ~new_item:(fun () ->
