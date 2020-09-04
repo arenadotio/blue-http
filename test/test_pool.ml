@@ -35,6 +35,7 @@ let () =
                    let pool =
                      let open T in
                      Pool.create
+                       ~name:"test"
                        ~max_elements:2
                        ~expire_timeout
                        ~new_item
@@ -63,6 +64,7 @@ let () =
                    let pool =
                      let open T in
                      Pool.create
+                       ~name:"test"
                        ~max_elements:2
                        ~expire_timeout
                        ~new_item
@@ -81,6 +83,7 @@ let () =
               let pool =
                 let open T in
                 Pool.create
+                  ~name:"test"
                   ~max_elements:1
                   ~expire_timeout:(Time.Span.of_day 100.)
                   ~new_item
@@ -96,6 +99,7 @@ let () =
               let pool =
                 let open T in
                 Pool.create
+                  ~name:"test"
                   ~max_elements:1
                   ~expire_timeout:(Time.Span.of_day 100.)
                   ~new_item
@@ -128,6 +132,7 @@ let () =
                let pool =
                  let open T in
                  Pool.create
+                   ~name:"test"
                    ~max_elements:2
                    ~expire_timeout
                    ~new_item
@@ -147,6 +152,7 @@ let () =
               let pool =
                 let open T in
                 Pool.create
+                  ~name:"test"
                   ~max_elements:2
                   ~expire_timeout:(Time.Span.of_ms 10.)
                   ~new_item
@@ -162,6 +168,7 @@ let () =
               let pool =
                 let open T in
                 Pool.create
+                  ~name:"test"
                   ~max_elements:1
                   ~expire_timeout:(Time.Span.of_day 100.)
                   ~new_item
