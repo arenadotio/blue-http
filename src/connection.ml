@@ -23,6 +23,8 @@ module Net = struct
     let open Async_unix.Unix in
     (* TODO: Cache DNS lookups until they expire *)
     let%bind addr =
+      Timing.run_with_timing ~label:"time_dns_namelookup"
+      @@ fun () ->
       Addr_info.get
         ~host
         [ Addr_info.AI_FAMILY PF_INET; Addr_info.AI_SOCKTYPE SOCK_STREAM ]
@@ -32,13 +34,16 @@ module Net = struct
       | _ -> raise (Failed_to_resolve_host host)
     in
     let%bind mode =
+      Timing.run_with_timing ~label:"time_set_url_scheme"
+      @@ fun () ->
       match scheme with
       | `Https ->
         let%map config = Ssl.default_ssl_config ~hostname:host () in
         `OpenSSL (addr, port, config)
       | `Http -> Deferred.return @@ `TCP (addr, port)
     in
-    Conduit_async.V2.connect ?interrupt mode
+    Timing.run_with_timing ~label:"time_tcp_connect"
+    @@ fun () -> Conduit_async.V2.connect ?interrupt mode
   ;;
 end
 
@@ -106,5 +111,5 @@ let call ?headers ?(chunked = false) ?(body = `Empty) t meth uri =
         (* Use chunked encoding if there is a body *)
         Request.make_for_client ?headers ~chunked:true meth uri
   in
-  request ~body t req
+  Timing.run_with_timing ~label:"time_make_request" @@ fun () -> request ~body t req
 ;;

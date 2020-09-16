@@ -42,10 +42,10 @@ let host_glob_matches ~glob hostname =
 let verify_certificate_host ~hostname conn =
   match Async_ssl.Ssl.Connection.peer_certificate conn with
   | None ->
-    Log.Global.debug "Rejecting SSL connection with no server certificate";
+    Logger.debug "Rejecting SSL connection with no server certificate";
     false
   | Some (Error e) ->
-    Log.Global.debug
+    Logger.debug
       !"Rejecting SSL connection with invalid certificate: %s"
       (Error.to_string_hum e);
     false
@@ -57,14 +57,14 @@ let verify_certificate_host ~hostname conn =
               | _ -> None)
      with
     | None ->
-      Log.Global.debug "Rejecting certificate with no 'Common Name'";
+      Logger.debug "Rejecting certificate with no 'Common Name'";
       false
     | Some common_name ->
       let names = common_name :: Async_ssl.Ssl.Certificate.subject_alt_names cert in
       List.exists names ~f:(fun glob -> host_glob_matches ~glob hostname)
       |> (function
       | false ->
-        Log.Global.debug
+        Logger.debug
           !"Rejecting SSL connection to %s since none of the cert's host names match \
             (certificates host are: %{sexp:string list})"
           hostname

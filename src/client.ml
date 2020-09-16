@@ -1,6 +1,5 @@
 open Core_kernel
 open Async_kernel
-open Async_unix
 
 type t =
   { connections : Connection.t Pool.t Scheme_host_port.Table.t
@@ -37,12 +36,12 @@ let make_pool
     ~max_elements:max_connections_per_host
     ~expire_timeout:connection_expire_timeout
     ~new_item:(fun () ->
-      Log.Global.debug
+      Logger.debug
         "Making new connection to %s"
         (Scheme_host_port.to_string scheme_host_port);
       Connection.connect ?interrupt scheme_host_port)
     ~kill_item:(fun t ->
-      Log.Global.debug
+      Logger.debug
         "Closing connection to %s"
         (Scheme_host_port.to_string scheme_host_port);
       Connection.close t)
@@ -50,7 +49,7 @@ let make_pool
     ~on_empty:(fun () ->
       if Hashtbl.mem connections scheme_host_port
       then (
-        Log.Global.debug
+        Logger.debug
           "Last connection to %s closed"
           (Scheme_host_port.to_string scheme_host_port);
         Hashtbl.remove connections scheme_host_port))
@@ -95,7 +94,7 @@ let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
              (* This exception is thrown if multiple requests are queued when the connection is closed *)
              Exn.to_string e |> String.is_substring ~substring:"throttle aborted job"
         then (
-          Log.Global.debug
+          Logger.debug
             "Remote connection to %s was closed, opening a new one"
             (Uri.to_string uri);
           `Repeat ())

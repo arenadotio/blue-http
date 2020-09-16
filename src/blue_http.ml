@@ -22,8 +22,13 @@ let maybe_with_client ?client f =
 ;;
 
 let call_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =
+  let uuid = Uuid_unix.create () in
+  Logger.with_uuid uuid
+  @@ fun () ->
   maybe_with_client ?client
   @@ fun client ->
+  Timing.run_with_timing ~label:"time_total_time"
+  @@ fun () ->
   Redirect.with_redirects ?max_redirects uri
   @@ fun uri -> Client.call ?interrupt ?headers ?chunked ?body client meth uri
 ;;

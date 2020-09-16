@@ -111,7 +111,7 @@ let enqueue
     |> List.find ~f:(fun (_, item) -> Item.try_lock item)
     |> function
     | Some (key, item) ->
-      Log.Global.debug ~tags "Using available pool item %s" (Unique_id.to_string key);
+      Logger.debug ~tags "Using available pool item %s" (Unique_id.to_string key);
       return (`Item_available (key, item))
     | None ->
       Throttle.enqueue insert_lock
@@ -120,7 +120,7 @@ let enqueue
       if Hashtbl.length items < max_elements
       then (
         let key = Unique_id.create () in
-        Log.Global.debug ~tags "Adding new item %s" (Unique_id.to_string key);
+        Logger.debug ~tags "Adding new item %s" (Unique_id.to_string key);
         let%map item = new_item () >>| Item.make_locked in
         Hashtbl.add_exn items ~key ~data:item;
         Condition.broadcast mutated ();
@@ -128,14 +128,14 @@ let enqueue
       else
         (* If the queue is full, wait for one of the existing items or for the size to change *)
         choice (Condition.wait mutated) (fun () ->
-            Log.Global.debug ~tags "Starting over since pool was mutated";
+            Logger.debug ~tags "Starting over since pool was mutated";
             `Changed)
         :: (Hashtbl.to_alist items
            |> List.map ~f:(fun (key, item) ->
                   choice (Item.unlocked item) (fun () ->
                       (* We return `Changed instead of `Item available because [choice] doesn't guarantee that
                          only one of the deferreds finishes, and we only want to call [Item.try_lock] once *)
-                      Log.Global.debug
+                      Logger.debug
                         ~tags
                         "Starting over since pool item %s is available"
                         (Unique_id.to_string key);
@@ -164,21 +164,15 @@ let enqueue
               item.last_used_by <- unique_id;
               if%bind check_item item.value >>| not
               then (
-                Log.Global.debug
+                Logger.debug
                   ~tags
                   "Check failed for %s, deleting and trying again"
                   (Unique_id.to_string key);
                 kill_item t ~key item >>| fun () -> `Repeat ())
               else (
-                Log.Global.debug
-                  ~tags
-                  "Starting job using item %s"
-                  (Unique_id.to_string key);
+                Logger.debug ~tags "Starting job using item %s" (Unique_id.to_string key);
                 let%map res = f item.value in
-                Log.Global.debug
-                  ~tags
-                  "Job using item %s succeeded"
-                  (Unique_id.to_string key);
+                Logger.debug ~tags "Job using item %s succeeded" (Unique_id.to_string key);
                 (* Check expiration once the timeout finishes *)
                 let expires = Time.(add (now ()) expire_timeout) in
                 at expires
@@ -187,7 +181,7 @@ let enqueue
                       if Unique_id.(item.last_used_by = unique_id)
                       then (
                         (* UUID matches so nothing else has used this item; time to delete it *)
-                        Log.Global.debug
+                        Logger.debug
                           ~tags
                           "Pool item %s expired"
                           (Unique_id.to_string key);
