@@ -11,6 +11,7 @@ homepage: "https://github.com/brendanlong/blue-http"
 doc: "https://brendanlong.github.io/blue-http"
 bug-reports: "https://github.com/brendanlong/blue-http/issues"
 depends: [
+  "core"
   "alcotest-async"
   "async_ssl"
   "cohttp-async" {>= "2.0.0"}

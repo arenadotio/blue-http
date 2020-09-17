@@ -112,5 +112,5 @@ let call ?headers ?(chunked = false) ?(body = `Empty) t meth uri =
         (* Use chunked encoding if there is a body *)
         Request.make_for_client ?headers ~chunked:true meth uri
   in
-  request ~body t req
+  Timing.run_with_timing ~label:"time_make_request" @@ fun () -> request ~body t req
 ;;
