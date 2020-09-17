@@ -21,7 +21,6 @@
  (description
    "Blue_http builds on Cohttp but provides TLS support with certification validation, connection pooling, and redirect support out of the box.")
  (depends
-   core
   alcotest-async
   async_ssl
   (cohttp-async
