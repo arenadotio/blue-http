@@ -1,7 +1,6 @@
 open Core_kernel
 open Async_kernel
 open Async_unix
-open Timing
 
 module Request = struct
   include Cohttp.Request
@@ -24,7 +23,7 @@ module Net = struct
     let open Async_unix.Unix in
     (* TODO: Cache DNS lookups until they expire *)
     let%bind addr =
-      run_with_timing ~label:"time_dns_namelookup"
+      Timing.run_with_timing ~label:"time_dns_namelookup"
       @@ fun () ->
       Addr_info.get
         ~host
@@ -35,7 +34,7 @@ module Net = struct
       | _ -> raise (Failed_to_resolve_host host)
     in
     let%bind mode =
-      run_with_timing ~label:"time_set_url_scheme"
+      Timing.run_with_timing ~label:"time_set_url_scheme"
       @@ fun () ->
       match scheme with
       | `Https ->
@@ -43,7 +42,7 @@ module Net = struct
         `OpenSSL (addr, port, config)
       | `Http -> Deferred.return @@ `TCP (addr, port)
     in
-    run_with_timing ~label:"time_tcp_connect"
+    Timing.run_with_timing ~label:"time_tcp_connect"
     @@ fun () -> Conduit_async.V2.connect ?interrupt mode
   ;;
 end
