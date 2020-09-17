@@ -6,6 +6,6 @@ let run_with_timing ~label f =
   f ()
   >>| fun res ->
   let stop = Time_ns.now () in
-  Logger.info !"%s: %s " label (Time_ns.abs_diff start stop |> Time_ns.Span.to_string_hum);
+  Logger.debug !"%s: %s " label (Time_ns.abs_diff start stop |> Time_ns.Span.to_string_hum);
   res
 ;;
