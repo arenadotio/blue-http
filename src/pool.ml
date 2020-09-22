@@ -103,6 +103,8 @@ let enqueue
     f
   =
   let tags = [ "pool_name", name; "pool_id", Unique_id.to_string pool_id ] in
+  Timing.run_with_timing ~tags ~label:"pool.enqueue"
+  @@ fun () ->
   Deferred.repeat_until_finished ()
   @@ fun () ->
   let%bind item =
