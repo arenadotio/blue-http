@@ -75,10 +75,10 @@ exception Connection_closed_by_remote_host of [ `New_connection | `Reused_connec
 let request ~body ({ ic; oc; _ } as t) req =
   Monitor.protect
     (fun () ->
-      Log.Global.debug "Starting to write request";
+      Logger.debug "Starting to write request";
       Request.write (Cohttp_async.Body_raw.write_body Request.write_body body) req oc
       >>= fun () ->
-      Log.Global.debug "Starting to read response";
+      Logger.debug "Starting to read response";
       Response.read ic
       >>| function
       | `Eof -> raise (Connection_closed_by_remote_host t.connection_state)
@@ -94,6 +94,7 @@ let request ~body ({ ic; oc; _ } as t) req =
         in
         resp, body)
     ~finally:(fun () ->
+      Logger.debug "Request handler exited";
       t.connection_state <- `Reused_connection;
       Deferred.unit)
 ;;
