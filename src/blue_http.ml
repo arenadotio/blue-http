@@ -6,6 +6,8 @@ module For_testing = struct
   module Pool = Pool
 end
 
+type tags = (string * string) list
+
 let set_default_max_redirects = Redirect.set_default_max_redirects
 
 let maybe_with_client ?client f =
@@ -21,53 +23,78 @@ let maybe_with_client ?client f =
         Deferred.unit)
 ;;
 
-let call_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =
-  let uuid = Uuid_unix.create () in
-  Logger.with_uuid uuid
+let call_stream
+    ?(tags = [])
+    ?max_redirects
+    ?interrupt
+    ?headers
+    ?chunked
+    ?body
+    ?client
+    meth
+    uri
+  =
+  let tags =
+    if List.exists tags ~f:(fun (k, _) -> String.Caseless.("request_uuid" = k))
+    then tags
+    else (
+      let uuid = Uuid_unix.create () |> Uuid.to_string in
+      ("request_uuid", uuid) :: tags)
+  in
+  Logger.with_tags tags
   @@ fun () ->
   maybe_with_client ?client
   @@ fun client ->
-  Timing.run_with_timing ~label:"time_total_time"
+  Timing.run_with_timing ~label:"total_time_call_stream"
   @@ fun () ->
   Redirect.with_redirects ?max_redirects uri
   @@ fun uri -> Client.call ?interrupt ?headers ?chunked ?body client meth uri
 ;;
 
-let request_stream ?max_redirects ?interrupt ?chunked ?body ?uri ?client req =
+let request_stream ?tags ?max_redirects ?interrupt ?chunked ?body ?uri ?client req =
   let uri =
     match uri with
     | Some t -> t
     | None -> Cohttp.Request.uri req
   and headers = Cohttp.Request.headers req
   and meth = Cohttp.Request.meth req in
-  Redirect.with_redirects ?max_redirects uri
-  @@ fun uri -> call_stream ?interrupt ~headers ?chunked ?body ?client meth uri
+  call_stream ?tags ?interrupt ~headers ?chunked ?body ?client ?max_redirects meth uri
 ;;
 
-let call ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =
+let call ?tags ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =
   let%bind res, body =
-    call_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri
+    call_stream ?tags ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri
   in
   Cohttp_async.Body.to_string body >>| fun body -> res, body
 ;;
 
-let request ?max_redirects ?interrupt ?chunked ?body ?uri ?client req =
+let request ?tags ?max_redirects ?interrupt ?chunked ?body ?uri ?client req =
   let%bind res, body =
-    request_stream ?max_redirects ?interrupt ?chunked ?body ?uri ?client req
+    request_stream ?tags ?max_redirects ?interrupt ?chunked ?body ?uri ?client req
   in
   Cohttp_async.Body.to_string body >>| fun body -> res, body
 ;;
 
-let call_ignore_body ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri =
+let call_ignore_body
+    ?tags
+    ?max_redirects
+    ?interrupt
+    ?headers
+    ?chunked
+    ?body
+    ?client
+    meth
+    uri
+  =
   let%bind res, body =
-    call_stream ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri
+    call_stream ?tags ?max_redirects ?interrupt ?headers ?chunked ?body ?client meth uri
   in
   Cohttp_async.Body.drain body >>| fun () -> res
 ;;
 
-let request_ignore_body ?max_redirects ?interrupt ?chunked ?body ?uri ?client req =
+let request_ignore_body ?tags ?max_redirects ?interrupt ?chunked ?body ?uri ?client req =
   let%bind res, body =
-    request_stream ?max_redirects ?interrupt ?chunked ?body ?uri ?client req
+    request_stream ?tags ?max_redirects ?interrupt ?chunked ?body ?uri ?client req
   in
   Cohttp_async.Body.drain body >>| fun () -> res
 ;;

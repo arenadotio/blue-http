@@ -5,6 +5,8 @@ module For_testing : sig
   module Pool = Pool
 end
 
+type tags = (string * string) list
+
 (** [set_default_max_redirects n] sets the maximum number of redirects we will do before giving up.
     [n] of 0 means redirects will not be followed.
     An exception will be thrown if [n] < 0.
@@ -12,7 +14,8 @@ end
 val set_default_max_redirects : int -> unit
 
 val call_stream
-  :  ?max_redirects:int
+  :  ?tags:tags
+  -> ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?headers:Cohttp.Header.t
   -> ?chunked:bool
@@ -23,7 +26,8 @@ val call_stream
   -> (Cohttp.Response.t * Cohttp_async.Body.t) Deferred.t
 
 val call
-  :  ?max_redirects:int
+  :  ?tags:tags
+  -> ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?headers:Cohttp.Header.t
   -> ?chunked:bool
@@ -34,7 +38,8 @@ val call
   -> (Cohttp.Response.t * string) Deferred.t
 
 val call_ignore_body
-  :  ?max_redirects:int
+  :  ?tags:tags
+  -> ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?headers:Cohttp.Header.t
   -> ?chunked:bool
@@ -45,7 +50,8 @@ val call_ignore_body
   -> Cohttp.Response.t Deferred.t
 
 val request_stream
-  :  ?max_redirects:int
+  :  ?tags:tags
+  -> ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?chunked:bool
   -> ?body:Cohttp_async.Body.t
@@ -55,7 +61,8 @@ val request_stream
   -> (Cohttp.Response.t * Cohttp_async.Body.t) Deferred.t
 
 val request
-  :  ?max_redirects:int
+  :  ?tags:tags
+  -> ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?chunked:bool
   -> ?body:Cohttp_async.Body.t
@@ -65,7 +72,8 @@ val request
   -> (Cohttp.Response.t * string) Deferred.t
 
 val request_ignore_body
-  :  ?max_redirects:int
+  :  ?tags:tags
+  -> ?max_redirects:int
   -> ?interrupt:unit Deferred.t
   -> ?chunked:bool
   -> ?body:Cohttp_async.Body.t

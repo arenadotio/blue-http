@@ -68,6 +68,7 @@ let find_or_make_pool ?interrupt t uri =
 
 let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
   Deferred.repeat_until_finished () (fun () ->
+      Logger.info "Attempt to call: %s" (Uri.to_string uri);
       let pool = find_or_make_pool ?interrupt t uri
       and ivar_res = Ivar.create () in
       Pool.enqueue pool (fun connection ->
