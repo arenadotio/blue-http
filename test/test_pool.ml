@@ -201,5 +201,5 @@ let () =
                 ~f:([%test_result: T.t] ~equal:(fun a b -> T.(a <> b)) ~expect:first_item))
         ] )
     ]
-  |> Alcotest_async.run "test_tls"
+  |> Alcotest_async.run "test_pool"
 ;;

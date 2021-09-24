@@ -103,6 +103,8 @@ let enqueue
     f
   =
   let tags = [ "pool_name", name; "pool_id", Unique_id.to_string pool_id ] in
+  Logger.with_tags tags
+  @@ fun () ->
   Timing.run_with_timing ~tags ~label:"pool.enqueue"
   @@ fun () ->
   Deferred.repeat_until_finished ()
@@ -113,7 +115,7 @@ let enqueue
     |> List.find ~f:(fun (_, item) -> Item.try_lock item)
     |> function
     | Some (key, item) ->
-      Logger.debug ~tags "Using available pool item %s" (Unique_id.to_string key);
+      Logger.debug "Using available pool item %s" (Unique_id.to_string key);
       return (`Item_available (key, item))
     | None ->
       Throttle.enqueue insert_lock
@@ -122,7 +124,7 @@ let enqueue
       if Hashtbl.length items < max_elements
       then (
         let key = Unique_id.create () in
-        Logger.debug ~tags "Adding new item %s" (Unique_id.to_string key);
+        Logger.debug "Adding new item %s" (Unique_id.to_string key);
         let%map item = new_item () >>| Item.make_locked in
         Hashtbl.add_exn items ~key ~data:item;
         Condition.broadcast mutated ();
@@ -130,7 +132,7 @@ let enqueue
       else
         (* If the queue is full, wait for one of the existing items or for the size to change *)
         choice (Condition.wait mutated) (fun () ->
-            Logger.debug ~tags "Starting over since pool was mutated";
+            Logger.debug "Starting over since pool was mutated";
             `Changed)
         :: (Hashtbl.to_alist items
            |> List.map ~f:(fun (key, item) ->
@@ -172,9 +174,9 @@ let enqueue
                   (Unique_id.to_string key);
                 kill_item t ~key item >>| fun () -> `Repeat ())
               else (
-                Logger.debug ~tags "Starting job using item %s" (Unique_id.to_string key);
+                Logger.debug "Starting job using item %s" (Unique_id.to_string key);
                 let%map res = f item.value in
-                Logger.debug ~tags "Job using item %s succeeded" (Unique_id.to_string key);
+                Logger.debug "Job using item %s succeeded" (Unique_id.to_string key);
                 (* Check expiration once the timeout finishes *)
                 let expires = Time.(add (now ()) expire_timeout) in
                 at expires
