@@ -105,7 +105,7 @@ let enqueue
   let tags = [ "pool_name", name; "pool_id", Unique_id.to_string pool_id ] in
   Logger.with_tags tags
   @@ fun () ->
-  Timing.run_with_timing ~tags ~label:"pool.enqueue"
+  Timing.run_with_timing ~tags ~label:"Duration of request wait in queue:"
   @@ fun () ->
   Deferred.repeat_until_finished ()
   @@ fun () ->
