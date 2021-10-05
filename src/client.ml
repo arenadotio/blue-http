@@ -71,6 +71,9 @@ let call ?interrupt ?headers ?chunked ?body (t : t) meth uri =
       Logger.debug "Attempt to call: %s" (Uri.to_string uri);
       let pool = find_or_make_pool ?interrupt t uri
       and ivar_res = Ivar.create () in
+      Logger.debug
+        ~tags:[ "pool_name", pool.name ]
+        "Queue depth of request pool: %d" (Throttle.num_jobs_waiting_to_start pool.insert_lock);
       Pool.enqueue pool (fun connection ->
           let%bind res =
             Monitor.try_with ~extract_exn:true (fun () ->
